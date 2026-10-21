@@ -82,7 +82,7 @@ The following security standards should be followed throughout the project:
 2. Install dependencies:
 
 ```bash
-npm install
+npm ci
 ```
 
 3. Set up your environment variables:
@@ -111,8 +111,50 @@ Example variables to configure:
 ```bash
 NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
-SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
 ```
+
+`NEXT_PUBLIC_SUPABASE_ANON_KEY` accepts the project's `sb_publishable_...` key
+or its legacy anon key. Never put a secret/service-role key or database password
+in these variables. `.env.local` is ignored by Git; the example contains placeholders.
+
+### S1-DEV-01: Supabase connection (issue #8)
+
+Prerequisite: Node.js 20.9 or newer. On Windows PowerShell use `npm.cmd`
+if execution policy blocks `npm.ps1`:
+
+```powershell
+npm.cmd ci
+Copy-Item .env.local.example .env.local
+# Fill in your project URL and publishable key locally, then:
+npm.cmd run check:db
+npm.cmd run dev
+```
+
+Copy the example only on first setup; do not overwrite an existing `.env.local`.
+Restart the development server after changing environment variables.
+
+`npm run check:db` sends a read-only HEAD query to the existing `product` table.
+Set `SUPABASE_CHECK_TABLE` to another public HOPE table if agreed with the DB Admin.
+A successful response verifies the database API connection, even when RLS returns
+no visible rows. It does not prove that authenticated users have the correct rights.
+Failures exit with a nonzero code; the DB Admin should check table availability,
+Data API grants and RLS policies. Never disable RLS to make the check pass.
+
+With the development server running, open `/api/health/supabase` to check the
+website's server connection. Success returns `{"connected":true}`; failures return
+HTTP 503. The diagnostic returns HTTP 404 in production and never returns records.
+
+Client helpers:
+- `lib/supabase/client.ts`: lazy browser client via `getSupabaseBrowserClient()`.
+- `lib/supabase/server.ts`: stateless anonymous server client via
+  `createSupabasePublicServerClient()`; it does not load signed-in user cookies.
+
+Registration, cookie-based login/session handling, password reset, roles and the
+protected dashboard remain DEV-02 through DEV-08. The existing authentication
+controls are still UI placeholders. No role-assignment behavior is introduced here.
+
+Verification before review: `npm ci`, `npm run check:db`, and `npm run build`.
+Link the PR to #8; teammate approval and merge are still required.
 
 ## Development Workflow
 
