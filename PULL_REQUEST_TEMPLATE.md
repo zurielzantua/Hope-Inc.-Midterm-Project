@@ -1,5 +1,5 @@
-Related issue: #<issue-number>
+Related issue: #[issue-number]
 
 ## Description
 
-<Describe the task completed.>
+[Describe the task completed.]
