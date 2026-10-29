@@ -1,9 +1,10 @@
 
 # HOPE Inc. ERP - Team Working Agreement
 
-**Sprint:** 1  
-**Issue:** S1-SM-03  
+**Applies to:** Sprints 1–4
+**Task:** S1-SM-03
 **Status:** Proposed - Pending Team Review
+
 
 ## 1. Team Roles and Responsibilities
 
@@ -38,7 +39,7 @@
 
 ## 2. Account and Authentication Rules
 
-The following rules must be confirmed before implementation.
+The following rules will guide implementation once approved by the team.
 
 ### User Registration
 
@@ -50,7 +51,7 @@ Proposed rules based on the Sprint 1 requirements:
 - Pending and blocked accounts cannot access protected features.
 - Public registration cannot assign Admin or Superadmin roles.
 
-**Decision:** Pending team confirmation.
+**Decision:** New registrations will receive the User role and Pending status. A Superadmin will approve accounts before they can access the ERP. Pending and blocked users will not have access to protected features.
 
 ### Initial Superadmin Accounts
 
@@ -60,7 +61,7 @@ The project requires initial Superadmin accounts for team members.
 - Passwords must not be stored in GitHub.
 - First-password setup uses a one-time link as required by the task plan.
 
-**Provisioning method:** Pending team confirmation.
+**Provisioning method:** The DB Admin will create one initial Superadmin account for each team member as part of S1-DBA-05. Each member will set their password through a one-time set-password link. Passwords will not be stored in the repository.
 
 ### Password Management
 
@@ -68,7 +69,7 @@ The project requires initial Superadmin accounts for team members.
 - The Developer and DB Admin must agree on how initial password setup and password recovery satisfy the project requirements.
 - Password recovery must handle expiration and prevent reuse of recovery credentials.
 
-**Implementation decision:** Pending team confirmation.
+**Implementation plan:** The Developer will implement login, logout, session handling, and first-password setup under S1-DEV-03, and password reset requests, emailed tokens, and the reset form under S1-DEV-04. The DB Admin will create the password-reset token table with a hashed token, expiry, and used flag under S1-DBA-04.
 
 ## 3. Git and GitHub Workflow
 
