@@ -89,23 +89,3 @@ A task is considered Done when:
 4. A Pull Request is linked to the GitHub issue.
 5. A teammate has reviewed and approved the PR.
 6. The PR has been merged.
-
-## 5. Team Review
-
-The team reviews this agreement through its GitHub Pull Request.
-
-Reviewers may approve the agreement or request changes.
-
-Unresolved decisions must be completed before the agreement is accepted.
-
-The GitHub PR review history serves as the record of review and approval.
-
-## 6. Agreement Status
-
-**Status:** Pending
-
-**Related GitHub Issue:** Add link here.
-
-**Pull Request:** Add link here.
-
-This document becomes the team's agreed reference after the outstanding decisions are resolved and the reviewed PR is merged.
