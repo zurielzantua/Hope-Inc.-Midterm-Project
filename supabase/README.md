@@ -78,6 +78,46 @@ that flag on the existing record.
 
 The script first shows a dry run, then asks for confirmation before pushing.
 
+## S1-DBA-04 password-reset token contract
+
+The `20261102000003_hope_password_reset_tokens.sql` migration creates
+`password_reset_token` for the trusted server-side recovery workflow. It stores
+the Supabase Auth user ID, a one-way `token_hash` (`bytea`), `created_at`,
+`expires_at`, and single-use state through `used` and `used_at`. It does not
+store passwords or plaintext reset tokens, and it has no audit or soft-delete
+trigger because expiry and redemption are the lifecycle.
+
+Supabase Auth remains the owner of password management and its native recovery
+session/link flow (`resetPasswordForEmail()` followed by `updateUser()`). The
+table satisfies the planned application token-record contract only if DEV-04
+chooses and documents one coherent integration; it must not introduce a second
+independent recovery flow accidentally.
+
+RLS is enabled with no client policies. `anon` and `authenticated` have no
+table privileges; only the trusted `service_role` receives table access. A
+trusted backend must hash the presented high-entropy token using the same
+algorithm before lookup, require `used = false AND expires_at > now()`, verify
+the intended `auth_user_id`, and redeem it with one conditional transaction:
+
+```sql
+UPDATE password_reset_token
+   SET used = true, used_at = now()
+ WHERE password_reset_token_id = $1
+   AND auth_user_id = $2
+   AND NOT used
+   AND expires_at > now()
+RETURNING auth_user_id;
+```
+
+The returned row is the only success signal; zero rows means expired, already
+used, or mismatched. The update must occur in the same trusted transaction as
+the token validation so concurrent redemption attempts cannot both succeed.
+Because Supabase Auth password updates are a separate service operation, DEV-04
+must handle an Auth-update failure after the token claim without allowing the
+token to be reused. DEV-04 still owns request handling, email delivery,
+callback/new password UX, session handling, and end-to-end expiry/reuse tests.
+No live database deployment is performed by this migration change.
+
 ## Creating a new migration
 
 1. From the project root, create a migration:
