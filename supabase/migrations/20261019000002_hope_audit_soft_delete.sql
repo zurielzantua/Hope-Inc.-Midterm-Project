@@ -204,7 +204,7 @@ BEGIN
                        r.tbl || '_aiu_audit', r.tbl, v_args);
 
         -- view of active (not deleted) rows
-        EXECUTE format('CREATE VIEW %I AS SELECT * FROM %I WHERE NOT is_deleted',
+        EXECUTE format('CREATE VIEW %I WITH (security_invoker = true) AS SELECT * FROM %I WHERE NOT is_deleted',
                        r.tbl || '_active', r.tbl);
     END LOOP;
 END;

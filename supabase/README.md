@@ -64,10 +64,15 @@ Pending state; clients must not supply elevated role, approval, or blocked
 values. If profile creation fails, the trusted backend must clean up or
 handle the Auth user as a partial-registration failure.
 
-The public `authenticated` role can read its own non-deleted profile and
-permissions, and can read non-deleted catalogues. There are no client write
-policies for account or permission data; provisioning, approval, role changes,
-and permission grants/revocations must use a trusted server-side operation.
+The public `authenticated` role can read its own approved, non-blocked,
+non-deleted profile and permissions, and can read non-deleted catalogues only
+when its account is approved and non-blocked. Pending, blocked, and deleted
+accounts cannot read protected records. Active-row views use
+`security_invoker = true`, so their source-table RLS policies are enforced.
+There are no client write policies for account or permission data; provisioning,
+approval, role changes, and permission grants/revocations must use a trusted
+server-side operation. The default role lookup is executable only by
+`service_role`.
 Soft deletion is performed by setting `is_deleted = true`; restoration clears
 that flag on the existing record.
 

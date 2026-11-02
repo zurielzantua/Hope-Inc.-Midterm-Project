@@ -52,7 +52,8 @@ RETURNS BIGINT
 LANGUAGE plpgsql
 STABLE
 SECURITY DEFINER
-SET search_path = public
+SET search_path = pg_catalog, public
+SET row_security = on
 AS $$
 DECLARE
     v_role_id BIGINT;
@@ -71,6 +72,10 @@ BEGIN
 END;
 $$;
 
+ALTER FUNCTION public.default_user_role_id() OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.default_user_role_id() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.default_user_role_id() TO service_role;
+
 ALTER TABLE app_user
     ALTER COLUMN role_id SET DEFAULT default_user_role_id();
 
@@ -82,16 +87,16 @@ CREATE TABLE user_permission (
     PRIMARY KEY (auth_user_id, right_id)
 );
 
-CREATE VIEW role_active AS
+CREATE VIEW role_active WITH (security_invoker = true) AS
     SELECT * FROM role WHERE NOT is_deleted;
 
-CREATE VIEW module_active AS
+CREATE VIEW module_active WITH (security_invoker = true) AS
     SELECT * FROM module WHERE NOT is_deleted;
 
-CREATE VIEW right_catalog_active AS
+CREATE VIEW right_catalog_active WITH (security_invoker = true) AS
     SELECT * FROM right_catalog WHERE NOT is_deleted;
 
-CREATE VIEW user_permission_active AS
+CREATE VIEW user_permission_active WITH (security_invoker = true) AS
     SELECT * FROM user_permission WHERE NOT is_deleted;
 
 CREATE TRIGGER role_biu_stamp
