@@ -44,6 +44,33 @@ Only the DB Admin pushes migrations. Tell the team before pushing because this d
 ./scripts/db-push.sh
 ```
 
+## S1-DBA-03 account and permission contract
+
+The `20261102000001_hope_accounts_permissions.sql` migration creates:
+
+- `app_user`, keyed by the Supabase Auth `auth.users.id` UUID
+- `role`, `module`, `right_catalog`, and `user_permission`
+- active-row views for each soft-deletable catalogue/permission table
+
+`app_user.role_id` defaults through `default_user_role_id()` to the seeded
+`role.role_code = 'user'` row. `account_state` defaults to `pending`, and
+`is_blocked` defaults to `false`. DBA-05 must seed the three roles before
+registration can create an application-user profile.
+
+Registration is a trusted server-side two-step operation: create the
+Supabase Auth user first, then insert `app_user` with the returned UUID,
+first/last name, and email. The database supplies the regular User role and
+Pending state; clients must not supply elevated role, approval, or blocked
+values. If profile creation fails, the trusted backend must clean up or
+handle the Auth user as a partial-registration failure.
+
+The public `authenticated` role can read its own non-deleted profile and
+permissions, and can read non-deleted catalogues. There are no client write
+policies for account or permission data; provisioning, approval, role changes,
+and permission grants/revocations must use a trusted server-side operation.
+Soft deletion is performed by setting `is_deleted = true`; restoration clears
+that flag on the existing record.
+
 The script first shows a dry run, then asks for confirmation before pushing.
 
 ## Creating a new migration
