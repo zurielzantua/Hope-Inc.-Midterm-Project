@@ -118,6 +118,47 @@ token to be reused. DEV-04 still owns request handling, email delivery,
 callback/new password UX, session handling, and end-to-end expiry/reuse tests.
 No live database deployment is performed by this migration change.
 
+## S1-DBA-05 catalogue seed contract
+
+`20261103000001_hope_seed_catalogues.sql` seeds the three default roles
+(`superadmin`, `admin`, and `user`), the five business modules (`customer`,
+`product`, `human_resources`, `sales`, and `reports`), and the 36 action rights
+specified by the Sprint 1 requirements. It is idempotent: matching
+soft-deleted seed rows are restored, while active rows and their IDs are
+preserved. Conflicting active catalogue names or right-to-module assignments
+fail the migration instead of being silently overwritten.
+
+The migration does not create Supabase Auth users, initial superadmin
+accounts, or passwords. Those accounts require an authorized provisioning
+flow and one-time password setup links.
+
+The HTML prototype's five module-level `.view` switches are visibility
+controls, not additional action rights. Developers should use the module
+catalogue and the user's module-level visibility decision to gate navigation
+and screens, then use the 36 `right_catalog` rows for action authorization.
+Do not add those `.view` switches to the action-right count or duplicate them
+as `right_catalog` rows unless a separately approved schema change introduces
+explicit module-visibility permissions.
+
+After applying the migration, the DB Admin can verify the seed with:
+
+```sql
+SELECT role_id, role_code, role_name, is_deleted
+FROM public.role
+ORDER BY role_code;
+
+SELECT module_id, module_code, module_name, is_deleted
+FROM public.module
+WHERE NOT is_deleted
+ORDER BY module_code;
+
+SELECT count(*) AS active_right_count
+FROM public.right_catalog
+WHERE NOT is_deleted;
+
+SELECT public.default_user_role_id();
+```
+
 ## Creating a new migration
 
 1. From the project root, create a migration:
