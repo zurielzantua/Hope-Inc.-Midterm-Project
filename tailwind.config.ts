@@ -8,19 +8,24 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        primary: {
-          50: '#eefbff',
-          100: '#d7f4ff',
-          500: '#1f9ae8',
-          600: '#0f7dcb',
-          700: '#0d659a',
-        },
-        slate: {
-          950: '#081120',
-        },
+        navy: "rgb(var(--color-navy) / <alpha-value>)",
+        teal: "rgb(var(--color-teal) / <alpha-value>)",
+        bronze: "rgb(var(--color-bronze) / <alpha-value>)",
+        cloud: "rgb(var(--color-cloud) / <alpha-value>)",
+        surface: "rgb(var(--color-surface) / <alpha-value>)",
+        ink: "rgb(var(--color-ink) / <alpha-value>)",
+        muted: "rgb(var(--color-muted) / <alpha-value>)",
+        line: "rgb(var(--color-line) / <alpha-value>)",
+        success: "rgb(var(--color-success) / <alpha-value>)",
+        warning: "rgb(var(--color-warning) / <alpha-value>)",
+        error: "rgb(var(--color-error) / <alpha-value>)",
+      },
+      fontFamily: {
+        sans: ["Aptos", "Segoe UI", "Helvetica Neue", "sans-serif"],
+        display: ["Georgia", "Times New Roman", "serif"],
       },
       boxShadow: {
-        soft: '0 20px 60px rgba(15, 23, 42, 0.18)',
+        soft: "0 16px 40px rgb(var(--color-navy) / 0.08)",
       },
     },
   },
