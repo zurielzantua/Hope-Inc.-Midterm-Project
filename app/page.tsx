@@ -58,7 +58,8 @@ const registrationMessages: Record<Exclude<RegistrationStatus, "idle">, string> 
 type RegistrationFormProps = {
   status?: RegistrationStatus;
   fieldErrors?: RegistrationFieldErrors;
-  onRegister?: (payload: RegistrationPayload) => void;
+  onRegister?: (payload: RegistrationPayload) => void | Promise<void>;
+  onEdit?: () => void;
   onSignIn?: () => void;
 };
 
@@ -66,6 +67,7 @@ function RegistrationForm({
   status = "idle",
   fieldErrors = {},
   onRegister,
+  onEdit,
   onSignIn,
 }: RegistrationFormProps) {
   const isSubmitting = status === "submitting";
@@ -127,6 +129,7 @@ function RegistrationForm({
                 maxLength={100}
                 required
                 disabled={isSubmitting}
+                onChange={onEdit}
                 aria-invalid={Boolean(fieldErrors.firstName)}
                 aria-describedby={fieldErrors.firstName ? "register-firstName-error" : undefined}
               />
@@ -143,6 +146,7 @@ function RegistrationForm({
                 maxLength={100}
                 required
                 disabled={isSubmitting}
+                onChange={onEdit}
                 aria-invalid={Boolean(fieldErrors.lastName)}
                 aria-describedby={fieldErrors.lastName ? "register-lastName-error" : undefined}
               />
@@ -161,6 +165,7 @@ function RegistrationForm({
               maxLength={320}
               required
               disabled={isSubmitting}
+              onChange={onEdit}
               aria-invalid={Boolean(fieldErrors.email)}
               aria-describedby={fieldErrors.email ? "register-email-error" : undefined}
             />
@@ -192,6 +197,55 @@ function RegistrationForm({
 
 export default function HomePage() {
   const [activeTab, setActiveTab] = useState<AuthView>("login");
+  const [registrationStatus, setRegistrationStatus] = useState<RegistrationStatus>("idle");
+  const [registrationFieldErrors, setRegistrationFieldErrors] = useState<RegistrationFieldErrors>({});
+
+  async function handleRegister(payload: RegistrationPayload) {
+    setRegistrationStatus("submitting");
+    setRegistrationFieldErrors({});
+
+    try {
+      const response = await fetch("/api/register", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      if (response.status === 201) {
+        const result: unknown = await response.json().catch(() => null);
+        if (result && typeof result === "object" && "status" in result && result.status === "pending") {
+          setRegistrationStatus("success");
+        } else {
+          setRegistrationStatus("error");
+        }
+        return;
+      }
+
+      switch (response.status) {
+        case 400:
+          setRegistrationStatus("invalid");
+          return;
+        case 409:
+          setRegistrationStatus("duplicate");
+          return;
+        case 429:
+          setRegistrationStatus("rate-limited");
+          return;
+        case 503:
+          setRegistrationStatus("unavailable");
+          return;
+        default:
+          setRegistrationStatus("error");
+      }
+    } catch {
+      setRegistrationStatus("unavailable");
+    }
+  }
+
+  function resetRegistrationFeedback() {
+    setRegistrationStatus("idle");
+    setRegistrationFieldErrors({});
+  }
 
   const tabs: { id: AuthView; label: string }[] = [
     { id: "login", label: "Login" },
@@ -333,7 +387,16 @@ export default function HomePage() {
                   )}
 
                   {activeTab === "register" && (
-                    <RegistrationForm status="idle" onSignIn={() => setActiveTab("login")} />
+                    <RegistrationForm
+                      status={registrationStatus}
+                      fieldErrors={registrationFieldErrors}
+                      onRegister={handleRegister}
+                      onEdit={resetRegistrationFeedback}
+                      onSignIn={() => {
+                        resetRegistrationFeedback();
+                        setActiveTab("login");
+                      }}
+                    />
                   )}
 
                   {activeTab === "reset" && (

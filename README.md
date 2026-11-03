@@ -117,6 +117,8 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
 or its legacy anon key. Never put a secret/service-role key or database password
 in these variables. `.env.local` is ignored by Git; the example contains placeholders.
 
+Registration uses `SUPABASE_SECRET_KEY` only in the server-side API route to create Auth identities and insert their linked ERP profiles. Set a secret key in local `.env.local` and the deployment's server-only environment. Never rename it to a `NEXT_PUBLIC_*` variable or expose it to the browser. Public registration also requires IP-based rate limiting at the deployment edge before production use; this repository does not include a shared rate-limit service.
+
 ### S1-DEV-01: Supabase connection (issue #8)
 
 Prerequisite: Node.js 20.9 or newer. On Windows PowerShell use `npm.cmd`
