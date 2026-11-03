@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type FormEvent } from "react";
 
 const modules = [
   {
@@ -40,6 +40,155 @@ const featureHighlights = [
 ];
 
 type AuthView = "login" | "register" | "reset";
+type RegistrationStatus = "idle" | "invalid" | "submitting" | "success" | "duplicate" | "rate-limited" | "unavailable" | "error";
+type RegistrationFields = "firstName" | "lastName" | "email";
+type RegistrationPayload = Record<RegistrationFields, string>;
+type RegistrationFieldErrors = Partial<Record<RegistrationFields, string>>;
+
+const registrationMessages: Record<Exclude<RegistrationStatus, "idle">, string> = {
+  invalid: "Enter your first name, last name, and a valid email.",
+  submitting: "Submitting registration…",
+  success: "Registration submitted. An admin must approve your account before you can sign in.",
+  duplicate: "Registration could not be completed for these details.",
+  "rate-limited": "Too many registration attempts. Please try again later.",
+  unavailable: "Registration is temporarily unavailable. Please try again later.",
+  error: "Registration could not be completed. Please contact an administrator.",
+};
+
+type RegistrationFormProps = {
+  status?: RegistrationStatus;
+  fieldErrors?: RegistrationFieldErrors;
+  onRegister?: (payload: RegistrationPayload) => void;
+  onSignIn?: () => void;
+};
+
+function RegistrationForm({
+  status = "idle",
+  fieldErrors = {},
+  onRegister,
+  onSignIn,
+}: RegistrationFormProps) {
+  const isSubmitting = status === "submitting";
+  const isSuccess = status === "success";
+  const isError = ["invalid", "duplicate", "rate-limited", "unavailable", "error"].includes(status);
+  const feedbackClass = isSuccess
+    ? "border-success/45 bg-success/15 text-white"
+    : isError
+      ? "border-error/45 bg-error/10 text-white"
+      : "border-teal/45 bg-teal/10 text-white";
+
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!onRegister || isSubmitting || isSuccess) return;
+
+    const formData = new FormData(event.currentTarget);
+    onRegister({
+      firstName: String(formData.get("firstName") ?? ""),
+      lastName: String(formData.get("lastName") ?? ""),
+      email: String(formData.get("email") ?? ""),
+    });
+  }
+
+  function renderFieldError(field: RegistrationFields) {
+    const message = fieldErrors[field];
+    return message ? (
+      <p id={`register-${field}-error`} className="mt-1.5 text-xs text-error" role="alert">
+        {message}
+      </p>
+    ) : null;
+  }
+
+  return (
+    <div>
+      <h2 className="font-display text-lg font-semibold text-white">Create your account</h2>
+      <p className="mt-1 text-sm text-white/65">New accounts start as User and need admin approval.</p>
+
+      {status !== "idle" && (
+        <div
+          className={`mt-4 rounded-sm border px-3 py-2.5 text-sm leading-5 ${feedbackClass}`}
+          role={isError ? "alert" : "status"}
+          aria-live={isError ? "assertive" : "polite"}
+        >
+          {registrationMessages[status]}
+        </div>
+      )}
+
+      {!isSuccess && (
+        <form className="mt-4 space-y-4" onSubmit={handleSubmit} aria-busy={isSubmitting}>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <label className="field-label" htmlFor="register-first-name">First Name</label>
+              <input
+                className="form-input"
+                id="register-first-name"
+                name="firstName"
+                type="text"
+                autoComplete="given-name"
+                maxLength={100}
+                required
+                disabled={isSubmitting}
+                aria-invalid={Boolean(fieldErrors.firstName)}
+                aria-describedby={fieldErrors.firstName ? "register-firstName-error" : undefined}
+              />
+              {renderFieldError("firstName")}
+            </div>
+            <div>
+              <label className="field-label" htmlFor="register-last-name">Last Name</label>
+              <input
+                className="form-input"
+                id="register-last-name"
+                name="lastName"
+                type="text"
+                autoComplete="family-name"
+                maxLength={100}
+                required
+                disabled={isSubmitting}
+                aria-invalid={Boolean(fieldErrors.lastName)}
+                aria-describedby={fieldErrors.lastName ? "register-lastName-error" : undefined}
+              />
+              {renderFieldError("lastName")}
+            </div>
+          </div>
+
+          <div>
+            <label className="field-label" htmlFor="register-email">Email Address</label>
+            <input
+              className="form-input"
+              id="register-email"
+              name="email"
+              type="email"
+              autoComplete="email"
+              maxLength={320}
+              required
+              disabled={isSubmitting}
+              aria-invalid={Boolean(fieldErrors.email)}
+              aria-describedby={fieldErrors.email ? "register-email-error" : undefined}
+            />
+            {renderFieldError("email")}
+          </div>
+
+          <button className="button-primary w-full" type="submit" disabled={isSubmitting}>
+            {isSubmitting && (
+              <span className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white motion-reduce:animate-none" aria-hidden="true" />
+            )}
+            {isSubmitting ? "Registering…" : "Register"}
+          </button>
+        </form>
+      )}
+
+      <p className="mt-4 text-center text-sm text-white/65">
+        Already have an account?{" "}
+        <a
+          className="font-semibold text-bronze underline-offset-4 hover:underline focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal/60"
+          href="#access-panel"
+          onClick={onSignIn}
+        >
+          Sign In
+        </a>
+      </p>
+    </div>
+  );
+}
 
 export default function HomePage() {
   const [activeTab, setActiveTab] = useState<AuthView>("login");
@@ -112,7 +261,7 @@ export default function HomePage() {
           </div>
         </div>
 
-        <div className="lg:pt-8">
+        <div id="access-panel" className="lg:pt-8">
           <div className="overflow-hidden rounded-md border border-teal/40 bg-[#0b2029]/95 shadow-[0_0_36px_rgba(11,110,117,0.18)]">
             <div className="border-b border-white/10 bg-white/[0.03] p-4 sm:p-5">
               <div className="mb-4 flex items-center justify-between">
@@ -184,33 +333,7 @@ export default function HomePage() {
                   )}
 
                   {activeTab === "register" && (
-                    <>
-                      <div className="grid gap-4 sm:grid-cols-2">
-                        <div>
-                          <label className="field-label">
-                            First name
-                          </label>
-                          <input className="form-input" defaultValue="Aisha" />
-                        </div>
-                        <div>
-                          <label className="field-label">
-                            Last name
-                          </label>
-                          <input className="form-input" defaultValue="Bello" />
-                        </div>
-                      </div>
-
-                      <div>
-                        <label className="field-label">
-                          Work email
-                        </label>
-                        <input type="email" className="form-input" defaultValue="aisha@hopeinc.com" />
-                      </div>
-
-                      <button className="button-primary w-full">
-                        Create account
-                      </button>
-                    </>
+                    <RegistrationForm status="idle" onSignIn={() => setActiveTab("login")} />
                   )}
 
                   {activeTab === "reset" && (
