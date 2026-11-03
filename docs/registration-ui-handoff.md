@@ -88,7 +88,7 @@ type RegistrationFormProps = {
 };
 ```
 
-The Developer should provide `onRegister`, own the request state, and pass the resulting `status` and any `fieldErrors` back to the form. The UIX branch intentionally leaves `onRegister` unset; it contains no mock network response.
+The UIX branch leaves `onRegister` unset and contains no mock network response. On `dev`, `HomePage` supplies the callback, owns request state, and passes the resulting `status` back to the form.
 
 | API result/state | UI behavior |
 |---|---|
@@ -103,9 +103,9 @@ The Developer should provide `onRegister`, own the request state, and pass the r
 
 Success uses a polite live region; errors use an alert region. The Sign In link returns to the existing Login tab. The actual API mapping and behavior remain DEV-02 work on `dev`.
 
-## Developer integration steps
+## DEV-02 integration status
 
-1. After UIX changes are approved and merged into `setup/initial-project-structure`, bring that approved screen into `dev`.
-2. Supply `onRegister` to send `{ firstName, lastName, email }` to `POST /api/register` and map its HTTP status to the `RegistrationStatus` above.
-3. Keep server validation authoritative; do not add role selection, password collection, or automatic sign-in.
-4. Verify success and error responses against the real backend before marking DEV-02 complete.
+- UIX-01 was merged into `setup/initial-project-structure` through PR #33; `dev` was fast-forwarded to that integration commit.
+- `HomePage` sends `{ firstName, lastName, email }` to `POST /api/register` and maps 201, 400, 409, 429, 503, and other responses to the states above.
+- Server validation remains authoritative. The form has no role or password fields and does not sign in the visitor.
+- Unit tests and the production build are run on `dev`; live Supabase registration still needs an authorized isolated test.
