@@ -76,6 +76,22 @@ server-side operation. The default role lookup is executable only by
 Soft deletion is performed by setting `is_deleted = true`; restoration clears
 that flag on the existing record.
 
+## S1-DEV-03 first-password RLS requirement
+
+The `20261104000001_hope_first_password_rls.sql` migration also requires the
+trusted Supabase Auth JWT claim
+`app_metadata.hope_first_password_complete` to be exactly `true` before an
+authenticated user can read `role`, `module`, `right_catalog`, `app_user`, or
+`user_permission`. A missing marker or `false` denies access, as do pending,
+blocked, and soft-deleted application accounts. The policy reads
+`app_metadata` through `auth.jwt()`; it must not be replaced with client-editable
+`user_metadata`.
+
+The trusted server-side password-completion operation must update the Auth
+`app_metadata` marker. The client must then refresh its session/JWT before RLS
+can observe the new value. Service-role operations bypass RLS and therefore do
+not validate these policies; application-side authorization remains required.
+
 The script first shows a dry run, then asks for confirmation before pushing.
 
 ## S1-DBA-04 password-reset token contract
@@ -158,6 +174,24 @@ WHERE NOT is_deleted;
 
 SELECT public.default_user_role_id();
 ```
+
+## S1-DBA-06 audit actor contract
+
+`audit_user()` attributes trigger-generated audit rows to `auth.uid()`, which
+comes from the verified Supabase request JWT. It deliberately ignores the
+legacy `app.username` setting, so a browser cannot forge `audit_log.action_by`.
+The same actor is used by `audit_stamp()`, preserving ADD, EDIT, DELETE, and
+RESTORE stamp behavior.
+
+Service-role requests do not carry the initiating human user in the database
+context. They are therefore recorded as `system:service_role` (and other
+trusted database roles as `system:<database-role>`), not as the connection
+role pretending to be a human. A trusted server that needs human attribution
+must execute the business mutation using that user's verified Supabase
+access-token context; it must not pass an arbitrary username or UUID through a
+browser-callable SQL function. If a server must use service-role credentials,
+the resulting event is intentionally system-attributed and the server should
+retain its request/user correlation in application logs.
 
 ## Creating a new migration
 
