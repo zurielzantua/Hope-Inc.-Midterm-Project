@@ -175,6 +175,24 @@ WHERE NOT is_deleted;
 SELECT public.default_user_role_id();
 ```
 
+## S1-DBA-06 audit actor contract
+
+`audit_user()` attributes trigger-generated audit rows to `auth.uid()`, which
+comes from the verified Supabase request JWT. It deliberately ignores the
+legacy `app.username` setting, so a browser cannot forge `audit_log.action_by`.
+The same actor is used by `audit_stamp()`, preserving ADD, EDIT, DELETE, and
+RESTORE stamp behavior.
+
+Service-role requests do not carry the initiating human user in the database
+context. They are therefore recorded as `system:service_role` (and other
+trusted database roles as `system:<database-role>`), not as the connection
+role pretending to be a human. A trusted server that needs human attribution
+must execute the business mutation using that user's verified Supabase
+access-token context; it must not pass an arbitrary username or UUID through a
+browser-callable SQL function. If a server must use service-role credentials,
+the resulting event is intentionally system-attributed and the server should
+retain its request/user correlation in application logs.
+
 ## Creating a new migration
 
 1. From the project root, create a migration:
