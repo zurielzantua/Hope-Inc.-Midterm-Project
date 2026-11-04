@@ -76,6 +76,22 @@ server-side operation. The default role lookup is executable only by
 Soft deletion is performed by setting `is_deleted = true`; restoration clears
 that flag on the existing record.
 
+## S1-DEV-03 first-password RLS requirement
+
+The `20261104000001_hope_first_password_rls.sql` migration also requires the
+trusted Supabase Auth JWT claim
+`app_metadata.hope_first_password_complete` to be exactly `true` before an
+authenticated user can read `role`, `module`, `right_catalog`, `app_user`, or
+`user_permission`. A missing marker or `false` denies access, as do pending,
+blocked, and soft-deleted application accounts. The policy reads
+`app_metadata` through `auth.jwt()`; it must not be replaced with client-editable
+`user_metadata`.
+
+The trusted server-side password-completion operation must update the Auth
+`app_metadata` marker. The client must then refresh its session/JWT before RLS
+can observe the new value. Service-role operations bypass RLS and therefore do
+not validate these policies; application-side authorization remains required.
+
 The script first shows a dry run, then asks for confirmation before pushing.
 
 ## S1-DBA-04 password-reset token contract
