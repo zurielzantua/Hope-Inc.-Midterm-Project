@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
+import Link from "next/link";
 
 const modules = [
   {
@@ -39,7 +40,7 @@ const featureHighlights = [
   "Smart reporting for leadership teams",
 ];
 
-type AuthView = "login" | "register" | "reset";
+type AuthView = "login" | "register";
 type RegistrationStatus = "idle" | "invalid" | "submitting" | "success" | "duplicate" | "rate-limited" | "unavailable" | "error";
 type RegistrationFields = "firstName" | "lastName" | "email";
 type RegistrationPayload = Record<RegistrationFields, string>;
@@ -281,7 +282,6 @@ export default function HomePage() {
   const tabs: { id: AuthView; label: string }[] = [
     { id: "login", label: "Login" },
     { id: "register", label: "Register" },
-    { id: "reset", label: "Reset Password" },
   ];
 
   return (
@@ -412,9 +412,9 @@ export default function HomePage() {
 
                       <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-white/65">
                         <span>Need a first password? Contact an administrator.</span>
-                        <button type="button" className="font-semibold text-bronze underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal/60">
+                        <Link href="/forgot-password" className="font-semibold text-bronze underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal/60">
                           Forgot password?
-                        </button>
+                        </Link>
                       </div>
 
                       <button type="submit" disabled={loginBusy} className="button-primary w-full">
@@ -436,24 +436,6 @@ export default function HomePage() {
                     />
                   )}
 
-                  {activeTab === "reset" && (
-                    <>
-                      <div>
-                        <label className="field-label">
-                          Email address
-                        </label>
-                        <input type="email" className="form-input" defaultValue="user@hopeinc.com" />
-                      </div>
-
-                      <p className="text-sm leading-6 text-muted">
-                        Enter your work email and we’ll send instructions to reset your password securely.
-                      </p>
-
-                      <button className="button-primary w-full">
-                        Send reset link
-                      </button>
-                    </>
-                  )}
                 </div>
               </div>
             </div>
