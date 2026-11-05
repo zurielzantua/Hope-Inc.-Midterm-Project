@@ -1,32 +1,24 @@
 import { redirect } from 'next/navigation';
-import { authorizeRequest, createSessionClient } from '@/lib/auth/server';
-import { LogoutButton } from '../logout-button';
+import { canAccessUserManagement } from '@/lib/auth/erp-modules';
+import { loadCurrentErpModules } from '@/lib/auth/erp-modules-server';
+import { ErpShell } from '../erp-shell';
 import { UserManagementClient } from './user-management-client';
 
 export const dynamic = 'force-dynamic';
 
 export default async function UserManagementPage() {
-  const access = await authorizeRequest();
-  if (!access.allowed) redirect('/');
-  if (access.role !== 'admin' && access.role !== 'superadmin') redirect('/erp');
-  const sessionClient = await createSessionClient();
-  const { data: sessionData, error: sessionError } = await sessionClient.auth.getUser();
-  if (sessionError || !sessionData.user) redirect('/');
+  const moduleAccess = await loadCurrentErpModules().catch(() => null);
+  if (!moduleAccess) redirect('/');
+  if (!canAccessUserManagement(moduleAccess.role)) redirect('/erp');
 
   return (
-    <main className="min-h-screen bg-cloud px-4 py-6 text-ink sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-6xl space-y-4">
-        <header className="rounded-md bg-navy px-5 py-4 text-white">
-          <p className="text-base font-bold">HOPE, INC. / ERP SYSTEM</p>
-          <p className="text-sm text-white/75">ERP · USER MANAGEMENT</p>
-        </header>
-        <nav aria-label="ERP navigation" className="flex flex-wrap items-center gap-3 rounded-md bg-navy px-5 py-3 text-sm text-white">
-          <a className="font-semibold" href="/erp">HOPE ERP</a><span aria-hidden="true">|</span>
-          <a href="/erp">Dashboard</a><span aria-hidden="true">|</span>
-          <span aria-current="page">Users</span><span className="ml-auto"><LogoutButton /></span>
-        </nav>
-        <UserManagementClient actorRole={access.role} actorUserId={sessionData.user.id} />
-      </div>
-    </main>
+    <ErpShell
+      role={moduleAccess.role}
+      modules={moduleAccess.modules}
+      currentPath="/erp/users"
+      moduleLinksUnavailable={moduleAccess.unavailable}
+    >
+      <UserManagementClient actorRole={moduleAccess.role} actorUserId={moduleAccess.userId} />
+    </ErpShell>
   );
 }

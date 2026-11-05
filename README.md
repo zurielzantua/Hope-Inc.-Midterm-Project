@@ -1,8 +1,8 @@
 # Hope Inc. Midterm Project
 
-This repository is the initial foundation for the Hope Inc. midterm project, built with Next.js App Router, Tailwind CSS, and Supabase.
+This repository contains the HOPE Inc. ERP web application, built with Next.js App Router, React, Tailwind CSS, TypeScript, and Supabase.
 
-It is intended to support a role-based application experience for users, admins, and superadmins, with secure database access enforced through Supabase Row Level Security (RLS).
+The Sprint 1 application includes registration, account and permission management, and a protected ERP dashboard. Supabase Auth manages identities and sessions; server-side authorization and database Row Level Security (RLS) protect access.
 
 ## Project Overview
 
@@ -20,7 +20,7 @@ Hope Inc. is a modern web application designed to manage users and access levels
 - Tailwind CSS
 - Supabase Auth
 - Supabase Database
-- TypeScript (recommended for development)
+- TypeScript
 
 ## User Roles
 
@@ -30,16 +30,14 @@ The application is designed around the following roles:
 - admin
 - user
 
-For development environments, the default role assigned to new signups is:
-
-- superadmin
+Public registrations always receive the `user` role and `pending` approval state. Users cannot choose Admin or Superadmin during registration; a Superadmin approves accounts and may designate approved Users as Admins.
 
 ## Security Requirements
 
 The following security standards should be followed throughout the project:
 
 - Enable Row Level Security (RLS) on all Supabase tables.
-- Restrict data access based on authenticated user roles.
+- Enforce account-state, role, and action-right checks on the server as well as in RLS policies.
 - Validate all user inputs before writing to the database.
 - Keep secrets and environment variables out of version control.
 
@@ -117,7 +115,7 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
 or its legacy anon key. Never put a secret/service-role key or database password
 in these variables. `.env.local` is ignored by Git; the example contains placeholders.
 
-Registration uses `SUPABASE_SECRET_KEY` only in the server-side API route to create Auth identities and insert their linked ERP profiles. Set a secret key in local `.env.local` and the deployment's server-only environment. Never rename it to a `NEXT_PUBLIC_*` variable or expose it to the browser. Public registration also requires IP-based rate limiting at the deployment edge before production use; this repository does not include a shared rate-limit service.
+Trusted server-side account checks and administrative operations use `SUPABASE_SECRET_KEY`. Set it in local `.env.local` and the deployment's server-only environment. Never rename it to a `NEXT_PUBLIC_*` variable or expose it to the browser. Public registration also requires IP-based rate limiting at the deployment edge before production use; this repository does not include a shared rate-limit service.
 
 ### S1-DEV-01: Supabase connection (issue #8)
 
@@ -151,31 +149,42 @@ Client helpers:
 - `lib/supabase/server.ts`: stateless anonymous server client via
   `createSupabasePublicServerClient()`; it does not load signed-in user cookies.
 
-Registration, cookie-based login/session handling, password reset, roles and the
-protected dashboard remain DEV-02 through DEV-08. The existing authentication
-controls are still UI placeholders. No role-assignment behavior is introduced here.
+## ERP Dashboard and Permissions
 
-Verification before review: `npm ci`, `npm run check:db`, and `npm run build`.
-Link the PR to #8; teammate approval and merge are still required.
+Admins and Superadmins manage accounts through User Management; the Rights
+Management dialog assigns per-action access. New public registrations remain
+regular Users with Pending approval until a Superadmin approves them.
+
+The protected `/erp` dashboard shows module tiles only when the signed-in account
+has an active right in that module. Module access is rechecked on direct URL
+requests. Admins and Superadmins can open User Management; only Superadmins can
+open System Settings. Pending, blocked, deleted, and unauthorized accounts are
+denied protected access.
+
+The module destinations currently provide permission-gated workspace shells.
+Customer, Product, Human Resources, Sales, and Reports operations are planned for
+later sprints and are not implemented here.
+
+Before opening a Pull Request, run `npm run check:db`, `npm run build`, and the
+tests relevant to the task. Link the PR to its GitHub issue and request teammate
+review.
 
 ## Development Workflow
 
-- Use feature branches for all work.
-- Never commit directly to the main branch.
-- Keep commits focused and descriptive.
-- Review changes before merging into the main branch.
+- Work on the branch assigned to your team role.
+- Open a Pull Request targeting `setup/initial-project-structure` and reference the related issue.
+- Keep commits focused and descriptive; get teammate review before merging.
 
-## Planned Highlights
+## Planned Business Modules
 
-- Authentication and login flow
-- Signup and role assignment
-- Dashboard layouts for different user types
-- User management and permissions
-- Secure database schema with RLS policies
+- Sprint 2: Customers and Products
+- Sprint 3: Human Resources
+- Sprint 4: Sales and Reports
 
 ## Notes
 
-This README is an initial project setup document and may evolve as the application grows. The project structure and implementation details will be refined as features are added.
+This project is under active development. See the Sprint 1 board and module map
+for task ownership and the planned module schedule.
 
 ## License
 

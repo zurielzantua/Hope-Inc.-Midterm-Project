@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
+import { RightsDialog } from './rights-dialog';
 
 type ActorRole = 'admin' | 'superadmin';
 type UserRow = {
@@ -56,6 +57,7 @@ export function UserManagementClient({ actorRole, actorUserId }: { actorRole: Ac
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [roleFilter, setRoleFilter] = useState('all');
   const [editor, setEditor] = useState<Editor>(null);
+  const [rightsUser, setRightsUser] = useState<UserRow | null>(null);
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [email, setEmail] = useState('');
@@ -97,6 +99,10 @@ export function UserManagementClient({ actorRole, actorUserId }: { actorRole: Ac
 
   function openEdit(user: UserRow) {
     setFirstName(user.firstName); setLastName(user.lastName); setEmail(user.email); setError(''); setNotice(''); setEditor({ mode: 'edit', user });
+  }
+
+  function openRights(user: UserRow) {
+    setError(''); setNotice(''); setRightsUser(user);
   }
 
   function closeEditor() {
@@ -270,6 +276,7 @@ export function UserManagementClient({ actorRole, actorUserId }: { actorRole: Ac
                   <td className="px-4 py-3">
                     {canManage ? <div className="flex flex-wrap items-center gap-3">
                       <button type="button" className="font-semibold text-teal underline-offset-4 hover:underline" disabled={busy} onClick={() => openEdit(user)}>Edit</button>
+                      <button type="button" className="font-semibold text-teal underline-offset-4 hover:underline" disabled={busy} onClick={() => openRights(user)}>Rights</button>
                       {!isSelfSuperadmin && <button type="button" className="font-semibold text-navy underline-offset-4 hover:underline" disabled={busy} onClick={() => void setBlocked(user)}>{user.isBlocked ? 'Unblock' : 'Block'}</button>}
                       {canApprove && <button type="button" className="font-semibold text-warning underline-offset-4 hover:underline" disabled={busy} onClick={() => void approveUser(user)}>Approve</button>}
                       {canPromote && <button type="button" className="font-semibold text-teal underline-offset-4 hover:underline" disabled={busy} onClick={() => void promoteUser(user)}>Make Admin</button>}
@@ -306,6 +313,14 @@ export function UserManagementClient({ actorRole, actorUserId }: { actorRole: Ac
             </form>
           </section>
         </div>
+      )}
+
+      {rightsUser && (
+        <RightsDialog
+          user={rightsUser}
+          onClose={() => setRightsUser(null)}
+          onSaved={() => setNotice(`Rights saved for ${rightsUser.firstName} ${rightsUser.lastName}.`)}
+        />
       )}
     </section>
   );
