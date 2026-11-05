@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
+import { RightsDialog } from './rights-dialog';
 
 type ActorRole = 'admin' | 'superadmin';
 type UserRow = {
@@ -13,6 +14,8 @@ type UserRow = {
   accountState: 'pending' | 'approved';
   isBlocked: boolean;
   isDeleted: boolean;
+  setupComplete: boolean | null;
+  invitationPending: boolean;
 };
 type Editor = { mode: 'add' } | { mode: 'edit'; user: UserRow } | null;
 type StatusFilter = 'all' | 'pending' | 'approved' | 'blocked' | 'deleted';
@@ -33,16 +36,18 @@ function statusClass(status: Exclude<StatusFilter, 'all'>) {
   return 'border-success/30 bg-success/10 text-success';
 }
 
-function errorMessage(status: number) {
+function errorMessage(status: number, action: 'create' | 'update' | 'invite' = 'update') {
   if (status === 400) return 'Check the entered information and try again.';
   if (status === 404) return 'This account cannot be managed or was not found.';
-  if (status === 409) return 'A user with this email already exists.';
+  if (status === 409 && action === 'create') return 'A user with this email already exists.';
+  if (status === 409 && action === 'invite') return 'This account is not eligible for a setup invitation.';
+  if (status === 409) return 'The last active Superadmin cannot be disabled.';
   if (status === 429) return 'Too many attempts. Wait a while, then try again.';
   if (status === 401 || status === 403) return 'Your session does not allow this action.';
   return 'User Management is temporarily unavailable. Please try again.';
 }
 
-export function UserManagementClient({ actorRole }: { actorRole: ActorRole }) {
+export function UserManagementClient({ actorRole, actorUserId }: { actorRole: ActorRole; actorUserId: string }) {
   const [users, setUsers] = useState<UserRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -52,6 +57,7 @@ export function UserManagementClient({ actorRole }: { actorRole: ActorRole }) {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [roleFilter, setRoleFilter] = useState('all');
   const [editor, setEditor] = useState<Editor>(null);
+  const [rightsUser, setRightsUser] = useState<UserRow | null>(null);
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [email, setEmail] = useState('');
@@ -95,6 +101,10 @@ export function UserManagementClient({ actorRole }: { actorRole: ActorRole }) {
     setFirstName(user.firstName); setLastName(user.lastName); setEmail(user.email); setError(''); setNotice(''); setEditor({ mode: 'edit', user });
   }
 
+  function openRights(user: UserRow) {
+    setError(''); setNotice(''); setRightsUser(user);
+  }
+
   function closeEditor() {
     if (busy) return;
     setEditor(null);
@@ -122,6 +132,72 @@ export function UserManagementClient({ actorRole }: { actorRole: ActorRole }) {
       await loadUsers(false);
     } catch (reason) {
       const status = reason instanceof Error && /^\d+$/.test(reason.message) ? Number(reason.message) : 503;
+      setError(errorMessage(status, editor?.mode === 'add' ? 'create' : 'update'));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function patchUser(body: Record<string, unknown>) {
+    const response = await fetch('/api/user-management/update', {
+      method: 'PATCH', headers: { 'content-type': 'application/json' }, cache: 'no-store',
+      body: JSON.stringify(body),
+    });
+    if (!response.ok) throw new Error(String(response.status));
+  }
+
+  async function sendSetupInvitation(user: UserRow) {
+    if (busy || actorRole !== 'superadmin' || user.accountState !== 'approved' || user.isBlocked || user.isDeleted || user.setupComplete !== false) return;
+    setBusy(true); setError(''); setNotice('');
+    try {
+      const response = await fetch('/api/auth/first-password/invitations', {
+        method: 'POST', headers: { 'content-type': 'application/json' }, cache: 'no-store',
+        body: JSON.stringify({ authUserId: user.authUserId }),
+      });
+      if (!response.ok) throw new Error(String(response.status));
+      setNotice(user.invitationPending ? 'Setup invitation resent.' : 'Setup invitation sent.');
+      await loadUsers(false);
+    } catch (reason) {
+      const status = reason instanceof Error && /^\d+$/.test(reason.message) ? Number(reason.message) : 503;
+      setError(errorMessage(status, 'invite'));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function approveUser(user: UserRow) {
+    if (busy || actorRole !== 'superadmin' || user.roleCode !== 'user' || user.accountState !== 'pending' || user.isBlocked || user.isDeleted) return;
+    setBusy(true); setError(''); setNotice('');
+    try {
+      await patchUser({ userId: user.authUserId, accountState: 'approved' });
+      try {
+        const response = await fetch('/api/auth/first-password/invitations', {
+          method: 'POST', headers: { 'content-type': 'application/json' }, cache: 'no-store',
+          body: JSON.stringify({ authUserId: user.authUserId }),
+        });
+        if (!response.ok) throw new Error(String(response.status));
+        setNotice('User approved and setup invitation sent.');
+      } catch {
+        setNotice('User approved. The setup invitation could not be sent; use Send setup invitation to retry.');
+      }
+      await loadUsers(false);
+    } catch (reason) {
+      const status = reason instanceof Error && /^\d+$/.test(reason.message) ? Number(reason.message) : 503;
+      setError(errorMessage(status));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function promoteUser(user: UserRow) {
+    if (busy || actorRole !== 'superadmin' || user.roleCode !== 'user' || user.accountState !== 'approved' || user.isBlocked || user.isDeleted) return;
+    setBusy(true); setError(''); setNotice('');
+    try {
+      await patchUser({ userId: user.authUserId, roleCode: 'admin' });
+      setNotice('User designated as Admin.');
+      await loadUsers(false);
+    } catch (reason) {
+      const status = reason instanceof Error && /^\d+$/.test(reason.message) ? Number(reason.message) : 503;
       setError(errorMessage(status));
     } finally {
       setBusy(false);
@@ -129,14 +205,10 @@ export function UserManagementClient({ actorRole }: { actorRole: ActorRole }) {
   }
 
   async function setBlocked(user: UserRow) {
-    if (busy || user.isDeleted || user.roleCode === 'superadmin') return;
+    if (busy || user.isDeleted || (actorRole === 'superadmin' && user.roleCode === 'superadmin' && user.authUserId === actorUserId)) return;
     setBusy(true); setError(''); setNotice('');
     try {
-      const response = await fetch('/api/user-management/update', {
-        method: 'PATCH', headers: { 'content-type': 'application/json' }, cache: 'no-store',
-        body: JSON.stringify({ userId: user.authUserId, isBlocked: !user.isBlocked }),
-      });
-      if (!response.ok) throw new Error(String(response.status));
+      await patchUser({ userId: user.authUserId, isBlocked: !user.isBlocked });
       setNotice(user.isBlocked ? 'User unblocked.' : 'User blocked.');
       await loadUsers(false);
     } catch (reason) {
@@ -190,7 +262,11 @@ export function UserManagementClient({ actorRole }: { actorRole: ActorRole }) {
             {loading && <tr><td colSpan={5} className="px-4 py-8 text-center text-muted" role="status">Loading users…</td></tr>}
             {!loading && filteredUsers.map((user) => {
               const status = statusOf(user);
-              const canManage = !user.isDeleted && user.roleCode !== 'superadmin' && (actorRole === 'superadmin' || user.roleCode === 'user');
+              const canManage = !user.isDeleted && (actorRole === 'superadmin' || user.roleCode === 'user');
+              const canApprove = actorRole === 'superadmin' && user.roleCode === 'user' && user.accountState === 'pending' && !user.isBlocked && !user.isDeleted;
+              const canPromote = actorRole === 'superadmin' && user.roleCode === 'user' && user.accountState === 'approved' && !user.isBlocked && !user.isDeleted;
+              const canInvite = actorRole === 'superadmin' && user.accountState === 'approved' && user.setupComplete === false && !user.isBlocked && !user.isDeleted;
+              const isSelfSuperadmin = actorRole === 'superadmin' && user.roleCode === 'superadmin' && user.authUserId === actorUserId;
               return (
                 <tr key={user.authUserId}>
                   <td className="px-4 py-3 font-medium text-navy">{user.firstName} {user.lastName}</td>
@@ -200,7 +276,11 @@ export function UserManagementClient({ actorRole }: { actorRole: ActorRole }) {
                   <td className="px-4 py-3">
                     {canManage ? <div className="flex flex-wrap items-center gap-3">
                       <button type="button" className="font-semibold text-teal underline-offset-4 hover:underline" disabled={busy} onClick={() => openEdit(user)}>Edit</button>
-                      <button type="button" className="font-semibold text-navy underline-offset-4 hover:underline" disabled={busy} onClick={() => void setBlocked(user)}>{user.isBlocked ? 'Unblock' : 'Block'}</button>
+                      <button type="button" className="font-semibold text-teal underline-offset-4 hover:underline" disabled={busy} onClick={() => openRights(user)}>Rights</button>
+                      {!isSelfSuperadmin && <button type="button" className="font-semibold text-navy underline-offset-4 hover:underline" disabled={busy} onClick={() => void setBlocked(user)}>{user.isBlocked ? 'Unblock' : 'Block'}</button>}
+                      {canApprove && <button type="button" className="font-semibold text-warning underline-offset-4 hover:underline" disabled={busy} onClick={() => void approveUser(user)}>Approve</button>}
+                      {canPromote && <button type="button" className="font-semibold text-teal underline-offset-4 hover:underline" disabled={busy} onClick={() => void promoteUser(user)}>Make Admin</button>}
+                      {canInvite && <button type="button" className="font-semibold text-navy underline-offset-4 hover:underline" disabled={busy} onClick={() => void sendSetupInvitation(user)}>{user.invitationPending ? 'Resend setup invitation' : 'Send setup invitation'}</button>}
                     </div> : <span className="text-muted">—</span>}
                   </td>
                 </tr>
@@ -233,6 +313,14 @@ export function UserManagementClient({ actorRole }: { actorRole: ActorRole }) {
             </form>
           </section>
         </div>
+      )}
+
+      {rightsUser && (
+        <RightsDialog
+          user={rightsUser}
+          onClose={() => setRightsUser(null)}
+          onSaved={() => setNotice(`Rights saved for ${rightsUser.firstName} ${rightsUser.lastName}.`)}
+        />
       )}
     </section>
   );
