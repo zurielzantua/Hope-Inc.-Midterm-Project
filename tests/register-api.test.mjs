@@ -198,7 +198,11 @@ test("success creates an unconfirmed email-only identity and links its Pending U
   const responseBody = await response.json();
   assert.equal(responseBody.status, "pending");
   const authCreation = admin.calls.find(([name]) => name === "createUser");
-  assert.deepEqual(authCreation, ["createUser", { email: "alex@example.test", email_confirm: false }]);
+  assert.deepEqual(authCreation, ["createUser", {
+    email: "alex@example.test",
+    email_confirm: false,
+    app_metadata: { hope_first_password_complete: false },
+  }]);
   assert.deepEqual(admin.calls.find(([name]) => name === "insert"), ["insert", "app_user", {
     auth_user_id: "auth-user-123", first_name: "Alex", last_name: "Rivera", email: "alex@example.test",
   }]);
@@ -215,7 +219,11 @@ test("email is lowercased before Auth and profile persistence", async () => {
 
   assert.equal(response.status, 201);
   assert.deepEqual(admin.calls.find(([name]) => name === "createUser"), [
-    "createUser", { email: "alex@example.test", email_confirm: false },
+    "createUser", {
+      email: "alex@example.test",
+      email_confirm: false,
+      app_metadata: { hope_first_password_complete: false },
+    },
   ]);
   assert.deepEqual(admin.calls.find(([name]) => name === "insert"), ["insert", "app_user", {
     auth_user_id: "auth-user-123", first_name: "Alex", last_name: "Rivera", email: "alex@example.test",

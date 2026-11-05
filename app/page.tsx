@@ -197,6 +197,8 @@ function RegistrationForm({
 
 export default function HomePage() {
   const [activeTab, setActiveTab] = useState<AuthView>("login");
+  const [loginBusy, setLoginBusy] = useState(false);
+  const [loginError, setLoginError] = useState("");
   const [registrationStatus, setRegistrationStatus] = useState<RegistrationStatus>("idle");
   const [registrationFieldErrors, setRegistrationFieldErrors] = useState<RegistrationFieldErrors>({});
 
@@ -245,6 +247,35 @@ export default function HomePage() {
   function resetRegistrationFeedback() {
     setRegistrationStatus("idle");
     setRegistrationFieldErrors({});
+  }
+
+  async function handleLogin(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (loginBusy) return;
+    const values = new FormData(event.currentTarget);
+    setLoginBusy(true);
+    setLoginError("");
+    try {
+      const response = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ email: String(values.get("email") ?? ""), password: String(values.get("password") ?? "") }),
+      });
+      if (response.ok) { window.location.assign("/erp"); return; }
+      const messages: Record<number, string> = {
+        400: "Enter your email and password.",
+        401: "Email or password is incorrect, or the account is not ready to sign in.",
+        503: "Sign-in is temporarily unavailable. Please try again later.",
+      };
+      if (response.status === 403) {
+        const body: unknown = await response.json().catch(() => null);
+        const allowed = ["Your account is awaiting approval.", "Your account is blocked. Contact an administrator.", "Your account cannot access the ERP.", "First-password setup is required. Contact an administrator."];
+        const message = body && typeof body === "object" && "error" in body && typeof body.error === "string" ? body.error : "";
+        setLoginError(allowed.includes(message) ? message : "Your account cannot access the ERP.");
+      } else setLoginError(messages[response.status] ?? messages[503]);
+    } catch {
+      setLoginError("Sign-in is temporarily unavailable. Please try again later.");
+    } finally { setLoginBusy(false); }
   }
 
   const tabs: { id: AuthView; label: string }[] = [
@@ -347,43 +378,49 @@ export default function HomePage() {
 
                 <div className="mt-5 space-y-4">
                   {activeTab === "login" && (
-                    <>
+                    <form className="space-y-4" onSubmit={handleLogin} aria-busy={loginBusy}>
+                      {loginError && <p role="alert" className="rounded-sm border border-error/45 bg-error/10 px-3 py-2.5 text-sm text-white">{loginError}</p>}
                       <div>
-                        <label className="field-label">
+                        <label className="field-label" htmlFor="login-email">
                           Email address
                         </label>
                         <input
+                          id="login-email"
+                          name="email"
                           type="email"
-                          defaultValue="admin@hopeinc.com"
+                          autoComplete="email"
+                          required
+                          disabled={loginBusy}
                           className="form-input"
                         />
                       </div>
 
                       <div>
-                        <label className="field-label">
+                        <label className="field-label" htmlFor="login-password">
                           Password
                         </label>
                         <input
+                          id="login-password"
+                          name="password"
                           type="password"
-                          defaultValue="********"
+                          autoComplete="current-password"
+                          required
+                          disabled={loginBusy}
                           className="form-input"
                         />
                       </div>
 
                       <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-white/65">
-                        <label className="flex items-center gap-2">
-                          <input type="checkbox" defaultChecked className="h-4 w-4 rounded border-line text-teal focus:ring-teal" />
-                          Keep me signed in
-                        </label>
+                        <span>Need a first password? Contact an administrator.</span>
                         <button type="button" className="font-semibold text-bronze underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal/60">
                           Forgot password?
                         </button>
                       </div>
 
-                      <button className="button-primary w-full">
-                        Login to Dashboard
+                      <button type="submit" disabled={loginBusy} className="button-primary w-full">
+                        {loginBusy ? "Signing in…" : "Sign in"}
                       </button>
-                    </>
+                    </form>
                   )}
 
                   {activeTab === "register" && (

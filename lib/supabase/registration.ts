@@ -109,6 +109,7 @@ export async function handleRegistrationRequest(
     const { data, error } = await client.auth.admin.createUser({
       email,
       email_confirm: false,
+      app_metadata: { hope_first_password_complete: false },
     });
     if (error || !data.user?.id) {
       if (error?.status === 429) {
