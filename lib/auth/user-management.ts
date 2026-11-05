@@ -10,14 +10,20 @@ export type UserManagementRow = {
   accountState: 'pending' | 'approved';
   isBlocked: boolean;
   isDeleted: boolean;
+  setupComplete: boolean | null;
+  invitationPending: boolean;
 };
-export type UserChange = { firstName: string; lastName: string } | { isBlocked: boolean };
+export type UserChange =
+  | { firstName: string; lastName: string }
+  | { isBlocked: boolean }
+  | { accountState: 'approved' }
+  | { roleCode: 'admin' };
 
 type Dependencies = {
-  getActorRole: () => Promise<string | null>;
+  getActor: () => Promise<{ userId: string; role: string } | null>;
   listUsers: (role: ManagerRole) => Promise<UserManagementRow[]>;
   createUser: (input: { firstName: string; lastName: string; email: string }) => Promise<Response>;
-  updateUser: (role: ManagerRole, userId: string, change: UserChange) => Promise<UserManagementRow | null>;
+  updateUser: (actor: { userId: string; role: ManagerRole }, userId: string, change: UserChange) => Promise<UserManagementRow | null>;
 };
 
 const json = (status: number, body: Record<string, unknown>) => Response.json(body, {
@@ -35,13 +41,13 @@ function allowedPost(request: Request) {
   catch { return false; }
 }
 
-async function managerRole(deps: Dependencies) {
-  let role: string | null;
-  try { role = await deps.getActorRole(); }
+async function managerActor(deps: Dependencies) {
+  let actor: { userId: string; role: string } | null;
+  try { actor = await deps.getActor(); }
   catch { return { response: json(503, { error: 'User Management is temporarily unavailable.' }) }; }
-  if (!role) return { response: json(401, { error: 'Sign in to continue.' }) };
-  if (role !== 'admin' && role !== 'superadmin') return { response: json(403, { error: 'You cannot access User Management.' }) };
-  return { role };
+  if (!actor) return { response: json(401, { error: 'Sign in to continue.' }) };
+  if (actor.role !== 'admin' && actor.role !== 'superadmin') return { response: json(403, { error: 'You cannot access User Management.' }) };
+  return { actor: { userId: actor.userId, role: actor.role as ManagerRole } };
 }
 
 function validName(value: unknown): value is string {
@@ -53,8 +59,7 @@ function validEmail(value: unknown): value is string {
 }
 
 export function canManageUserRole(actorRole: string, targetRole: string) {
-  if (targetRole === 'superadmin') return false;
-  if (actorRole === 'superadmin') return targetRole === 'user' || targetRole === 'admin';
+  if (actorRole === 'superadmin') return targetRole === 'user' || targetRole === 'admin' || targetRole === 'superadmin';
   return actorRole === 'admin' && targetRole === 'user';
 }
 
@@ -69,15 +74,15 @@ export function accountStatusLabel(account: { is_deleted: boolean; is_blocked: b
 }
 
 export async function handleListManagedUsers(deps: Dependencies) {
-  const access = await managerRole(deps);
+  const access = await managerActor(deps);
   if ('response' in access) return access.response;
-  try { return json(200, { users: await deps.listUsers(access.role as ManagerRole) }); }
+  try { return json(200, { users: await deps.listUsers(access.actor.role) }); }
   catch { return json(503, { error: 'User Management is temporarily unavailable.' }); }
 }
 
 export async function handleCreateManagedUser(request: Request, deps: Dependencies) {
   if (!allowedPost(request)) return json(403, { error: 'Request not allowed.' });
-  const access = await managerRole(deps);
+  const access = await managerActor(deps);
   if ('response' in access) return access.response;
 
   let body: unknown;
@@ -105,7 +110,7 @@ export async function handleCreateManagedUser(request: Request, deps: Dependenci
 
 export async function handleUpdateManagedUser(request: Request, deps: Dependencies) {
   if (!allowedPost(request)) return json(403, { error: 'Request not allowed.' });
-  const access = await managerRole(deps);
+  const access = await managerActor(deps);
   if ('response' in access) return access.response;
 
   let body: unknown;
@@ -121,15 +126,33 @@ export async function handleUpdateManagedUser(request: Request, deps: Dependenci
     change = { firstName: body.firstName.trim(), lastName: body.lastName.trim() };
   } else if (fields.length === 1 && fields[0] === 'isBlocked' && typeof body.isBlocked === 'boolean') {
     change = { isBlocked: body.isBlocked };
+  } else if (fields.length === 1 && fields[0] === 'accountState' && body.accountState === 'approved') {
+    if (access.actor.role !== 'superadmin') return json(403, { error: 'Only a Superadmin can approve accounts.' });
+    change = { accountState: 'approved' };
+  } else if (fields.length === 1 && fields[0] === 'roleCode' && body.roleCode === 'admin') {
+    if (access.actor.role !== 'superadmin') return json(403, { error: 'Only a Superadmin can designate Admin accounts.' });
+    change = { roleCode: 'admin' };
   } else {
-    return json(400, { error: 'Only name or block status can be changed here.' });
+    return json(400, { error: 'This account update is invalid.' });
   }
 
   try {
-    const user = await deps.updateUser(access.role as ManagerRole, body.userId.toLowerCase(), change);
+    const user = await deps.updateUser(access.actor, body.userId.toLowerCase(), change);
     if (!user) return json(404, { error: 'This user cannot be managed or was not found.' });
     return json(200, { user });
-  } catch {
+  } catch (error) {
+    if (isRecord(error) && error.code === '23514' && String(error.message).includes('last_active_superadmin')) {
+      return json(409, { error: 'The last active Superadmin cannot be disabled.' });
+    }
+    if (isRecord(error) && error.code === 'RPC_UNAVAILABLE') {
+      return json(503, { error: 'This account action requires a database update that has not been deployed or refreshed yet.' });
+    }
+    if (isRecord(error) && error.code === '42501' && String(error.message).includes('self_block_forbidden')) {
+      return json(403, { error: 'You cannot block your own account.' });
+    }
+    if (isRecord(error) && error.code === '42501' && String(error.message).includes('superadmin_actor_required')) {
+      return json(403, { error: 'Only an active Superadmin can perform this action.' });
+    }
     return json(503, { error: 'User Management is temporarily unavailable.' });
   }
 }

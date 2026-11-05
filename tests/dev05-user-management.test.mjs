@@ -19,24 +19,24 @@ function dependencies(overrides = {}) {
   const calls = [];
   return {
     calls,
-    getActorRole: async () => overrides.role === undefined ? 'admin' : overrides.role,
+    getActor: async () => overrides.actor === undefined ? { userId: 'manager-1', role: 'admin' } : overrides.actor,
     listUsers: async (role) => { calls.push(['listUsers', role]); return overrides.users ?? []; },
     createUser: async (input) => { calls.push(['createUser', input]); return overrides.createResponse ?? Response.json({ status: 'pending' }, { status: 201 }); },
-    updateUser: async (role, userId, changes) => {
-      calls.push(['updateUser', role, userId, changes]);
-      if (overrides.updateError) throw new Error('private database details');
+    updateUser: async (actor, userId, changes) => {
+      calls.push(['updateUser', actor, userId, changes]);
+      if (overrides.updateError) throw overrides.updateError;
       return overrides.updatedUser === undefined ? { authUserId: userId, ...changes } : overrides.updatedUser;
     },
   };
 }
 
-test('role hierarchy lets Admin manage Users and Superadmin manage User/Admin, never Superadmin', () => {
+test('role hierarchy limits Admins and leaves Superadmin account safety to the database guard', () => {
   assert.equal(canManageUserRole('admin', 'user'), true);
   assert.equal(canManageUserRole('admin', 'admin'), false);
   assert.equal(canManageUserRole('admin', 'superadmin'), false);
   assert.equal(canManageUserRole('superadmin', 'user'), true);
   assert.equal(canManageUserRole('superadmin', 'admin'), true);
-  assert.equal(canManageUserRole('superadmin', 'superadmin'), false);
+  assert.equal(canManageUserRole('superadmin', 'superadmin'), true);
   assert.equal(canManageUserRole('user', 'user'), false);
   assert.deepEqual(visibleRoleCodes('admin'), ['user']);
   assert.deepEqual(visibleRoleCodes('superadmin'), ['user', 'admin', 'superadmin']);
@@ -50,12 +50,12 @@ test('account status gives Blocked precedence over Pending and recognizes delete
 });
 
 test('only Admin and Superadmin can list managed users', async () => {
-  assert.equal((await handleListManagedUsers(dependencies({ role: null }))).status, 401);
-  assert.equal((await handleListManagedUsers(dependencies({ role: 'user' }))).status, 403);
+  assert.equal((await handleListManagedUsers(dependencies({ actor: null }))).status, 401);
+  assert.equal((await handleListManagedUsers(dependencies({ actor: { userId: 'user-1', role: 'user' } }))).status, 403);
   const admin = dependencies();
   assert.equal((await handleListManagedUsers(admin)).status, 200);
   assert.deepEqual(admin.calls, [['listUsers', 'admin']]);
-  const superadmin = dependencies({ role: 'superadmin' });
+  const superadmin = dependencies({ actor: { userId: 'root-1', role: 'superadmin' } });
   assert.equal((await handleListManagedUsers(superadmin)).status, 200);
   assert.deepEqual(superadmin.calls, [['listUsers', 'superadmin']]);
 });
@@ -77,7 +77,7 @@ test('Admin creation rejects malformed input, privilege fields, and cross-origin
     { firstName: 'x'.repeat(101), lastName: 'Santos', email: 'ana@example.test' },
   ]) assert.equal((await handleCreateManagedUser(post('/api/user-management', body), dependencies())).status, 400);
   assert.equal((await handleCreateManagedUser(post('/api/user-management', { firstName: 'Ana', lastName: 'Santos', email: 'ana@example.test' }, 'https://attacker.example'), dependencies())).status, 403);
-  assert.equal((await handleCreateManagedUser(post('/api/user-management', { firstName: 'Ana', lastName: 'Santos', email: 'ana@example.test' }), dependencies({ role: 'user' }))).status, 403);
+  assert.equal((await handleCreateManagedUser(post('/api/user-management', { firstName: 'Ana', lastName: 'Santos', email: 'ana@example.test' }), dependencies({ actor: { userId: 'user-1', role: 'user' } }))).status, 403);
 });
 
 test('duplicate and unavailable provisioning errors stay generic', async () => {
@@ -89,12 +89,12 @@ test('duplicate and unavailable provisioning errors stay generic', async () => {
 
 test('Edit accepts names only; Block/Unblock accepts a boolean only', async () => {
   const id = '11111111-1111-4111-8111-111111111111';
-  const edit = dependencies({ role: 'superadmin' });
+  const edit = dependencies({ actor: { userId: 'root-1', role: 'superadmin' } });
   assert.equal((await handleUpdateManagedUser(patch({ userId: id, firstName: 'Ana', lastName: 'Reyes' }), edit)).status, 200);
-  assert.deepEqual(edit.calls, [['updateUser', 'superadmin', id, { firstName: 'Ana', lastName: 'Reyes' }]]);
+  assert.deepEqual(edit.calls, [['updateUser', { userId: 'root-1', role: 'superadmin' }, id, { firstName: 'Ana', lastName: 'Reyes' }]]);
   const block = dependencies();
   assert.equal((await handleUpdateManagedUser(patch({ userId: id, isBlocked: true }), block)).status, 200);
-  assert.deepEqual(block.calls, [['updateUser', 'admin', id, { isBlocked: true }]]);
+  assert.deepEqual(block.calls, [['updateUser', { userId: 'manager-1', role: 'admin' }, id, { isBlocked: true }]]);
   for (const body of [
     { userId: id, email: 'new@example.test' },
     { userId: id, role: 'admin' },
@@ -108,7 +108,60 @@ test('Update rejects invalid IDs, cross-origin calls, and unavailable targets sa
   assert.equal((await handleUpdateManagedUser(patch({ userId: '11111111-1111-4111-8111-111111111111', isBlocked: true }, 'https://attacker.example'), dependencies())).status, 403);
   const missing = await handleUpdateManagedUser(patch({ userId: '11111111-1111-4111-8111-111111111111', isBlocked: true }), dependencies({ updatedUser: null }));
   assert.equal(missing.status, 404);
-  const failed = await handleUpdateManagedUser(patch({ userId: '11111111-1111-4111-8111-111111111111', isBlocked: true }), dependencies({ updateError: true }));
+  const failed = await handleUpdateManagedUser(patch({ userId: '11111111-1111-4111-8111-111111111111', isBlocked: true }), dependencies({ updateError: new Error('private database details') }));
   assert.equal(failed.status, 503);
   assert.doesNotMatch(await failed.text(), /private database details/);
+});
+
+test('only Superadmin can approve Pending Users or designate approved Users as Admin', async () => {
+  const id = '11111111-1111-4111-8111-111111111111';
+  const pendingUpdate = { userId: id, accountState: 'approved' };
+  const adminApproval = dependencies();
+  assert.equal((await handleUpdateManagedUser(patch(pendingUpdate), adminApproval)).status, 403);
+  assert.equal(adminApproval.calls.length, 0);
+  const superadmin = dependencies({ actor: { userId: 'root-1', role: 'superadmin' } });
+  assert.equal((await handleUpdateManagedUser(patch(pendingUpdate), superadmin)).status, 200);
+  assert.deepEqual(superadmin.calls, [['updateUser', { userId: 'root-1', role: 'superadmin' }, id, { accountState: 'approved' }]]);
+  assert.equal((await handleUpdateManagedUser(patch({ userId: id, roleCode: 'admin' }), dependencies())).status, 403);
+  const promote = dependencies({ actor: { userId: 'root-1', role: 'superadmin' } });
+  assert.equal((await handleUpdateManagedUser(patch({ userId: id, roleCode: 'admin' }), promote)).status, 200);
+  assert.deepEqual(promote.calls, [['updateUser', { userId: 'root-1', role: 'superadmin' }, id, { roleCode: 'admin' }]]);
+  assert.equal((await handleUpdateManagedUser(patch({ userId: id, accountState: 'pending' }), dependencies({ actor: { userId: 'root-1', role: 'superadmin' } }))).status, 400);
+  assert.equal((await handleUpdateManagedUser(patch({ userId: id, roleCode: 'superadmin' }), dependencies({ actor: { userId: 'root-1', role: 'superadmin' } }))).status, 400);
+});
+
+test('last active Superadmin guard failures return a conflict instead of a generic service error', async () => {
+  const id = '11111111-1111-4111-8111-111111111111';
+  const blocked = await handleUpdateManagedUser(patch({ userId: id, isBlocked: true }), dependencies({
+    actor: { userId: 'root-2', role: 'superadmin' },
+    updateError: { code: '23514', message: 'last_active_superadmin' },
+  }));
+  assert.equal(blocked.status, 409);
+  assert.match(await blocked.text(), /last active Superadmin/);
+});
+
+test('a missing database action fails closed with an explicit unavailable error', async () => {
+  const id = '11111111-1111-4111-8111-111111111111';
+  const unavailable = await handleUpdateManagedUser(patch({ userId: id, isBlocked: true }), dependencies({
+    actor: { userId: 'root-1', role: 'superadmin' },
+    updateError: { code: 'RPC_UNAVAILABLE', message: 'Account management RPC is unavailable' },
+  }));
+  assert.equal(unavailable.status, 503);
+  assert.match(await unavailable.text(), /database update that has not been deployed/);
+});
+
+test('database actor checks surface as authorization errors, not service failures', async () => {
+  const id = '11111111-1111-4111-8111-111111111111';
+  const forgedActor = await handleUpdateManagedUser(patch({ userId: id, isBlocked: true }), dependencies({
+    actor: { userId: 'root-1', role: 'superadmin' },
+    updateError: { code: '42501', message: 'superadmin_actor_required' },
+  }));
+  assert.equal(forgedActor.status, 403);
+  assert.match(await forgedActor.text(), /active Superadmin/);
+  const selfBlock = await handleUpdateManagedUser(patch({ userId: id, isBlocked: true }), dependencies({
+    actor: { userId: 'root-1', role: 'superadmin' },
+    updateError: { code: '42501', message: 'self_block_forbidden' },
+  }));
+  assert.equal(selfBlock.status, 403);
+  assert.match(await selfBlock.text(), /cannot block your own account/);
 });
