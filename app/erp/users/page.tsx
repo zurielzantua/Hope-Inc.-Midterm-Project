@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation';
-import { authorizeRequest } from '@/lib/auth/server';
+import { authorizeRequest, createSessionClient } from '@/lib/auth/server';
 import { LogoutButton } from '../logout-button';
 import { UserManagementClient } from './user-management-client';
 
@@ -9,6 +9,9 @@ export default async function UserManagementPage() {
   const access = await authorizeRequest();
   if (!access.allowed) redirect('/');
   if (access.role !== 'admin' && access.role !== 'superadmin') redirect('/erp');
+  const sessionClient = await createSessionClient();
+  const { data: sessionData, error: sessionError } = await sessionClient.auth.getUser();
+  if (sessionError || !sessionData.user) redirect('/');
 
   return (
     <main className="min-h-screen bg-cloud px-4 py-6 text-ink sm:px-6 lg:px-8">
@@ -22,7 +25,7 @@ export default async function UserManagementPage() {
           <a href="/erp">Dashboard</a><span aria-hidden="true">|</span>
           <span aria-current="page">Users</span><span className="ml-auto"><LogoutButton /></span>
         </nav>
-        <UserManagementClient actorRole={access.role} />
+        <UserManagementClient actorRole={access.role} actorUserId={sessionData.user.id} />
       </div>
     </main>
   );
