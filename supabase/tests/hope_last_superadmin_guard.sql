@@ -39,8 +39,23 @@ BEGIN
             SELECT NULLIF(current_setting('request.jwt.claim.sub', true), '')::uuid;
         $fn$;
     END IF;
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_proc p
+        JOIN pg_namespace n ON n.oid = p.pronamespace
+        WHERE n.nspname = 'auth' AND p.proname = 'jwt'
+    ) THEN
+        CREATE FUNCTION auth.jwt() RETURNS jsonb
+        LANGUAGE sql STABLE
+        AS $fn$
+            SELECT NULLIF(current_setting('request.jwt.claims', true), '')::jsonb;
+        $fn$;
+    END IF;
 END;
 $$;
+CREATE TABLE auth.users (
+    id UUID PRIMARY KEY,
+    raw_app_meta_data JSONB NOT NULL DEFAULT '{}'::jsonb
+);
 
 CREATE TABLE public.role (
     role_id BIGINT PRIMARY KEY,
@@ -60,15 +75,24 @@ GRANT SELECT, UPDATE, DELETE ON public.app_user TO service_role;
 
 \ir ../migrations/20261105013946_hope_last_superadmin_guard.sql
 \ir ../migrations/20261105022225_hope_superadmin_actor_attribution.sql
+\ir ../migrations/20261105033601_dev06_require_completed_superadmin_actor.sql
 
 INSERT INTO public.role (role_id, role_code) VALUES
     (1, 'user'), (2, 'admin'), (3, 'superadmin');
 INSERT INTO public.app_user (auth_user_id, role_id, account_state) VALUES
     ('11111111-1111-4111-8111-111111111111', 3, 'approved'),
     ('22222222-2222-4222-8222-222222222222', 3, 'approved');
+INSERT INTO auth.users (id, raw_app_meta_data) VALUES
+    ('11111111-1111-4111-8111-111111111111', '{"hope_first_password_complete": true}'),
+    ('22222222-2222-4222-8222-222222222222', '{"hope_first_password_complete": true}');
 
 DO $$
 BEGIN
+    IF has_function_privilege('anon', 'public.is_completed_superadmin_actor()', 'EXECUTE')
+       OR has_function_privilege('authenticated', 'public.is_completed_superadmin_actor()', 'EXECUTE')
+       OR has_function_privilege('service_role', 'public.is_completed_superadmin_actor()', 'EXECUTE') THEN
+        RAISE EXCEPTION 'the Superadmin actor-check helper must not be directly callable';
+    END IF;
     IF has_function_privilege('anon', 'public.set_superadmin_blocked(uuid,boolean)', 'EXECUTE')
        OR NOT has_function_privilege('authenticated', 'public.set_superadmin_blocked(uuid,boolean)', 'EXECUTE')
        OR has_function_privilege('service_role', 'public.set_superadmin_blocked(uuid,boolean)', 'EXECUTE') THEN
@@ -88,6 +112,7 @@ END;
 $$;
 
 SELECT set_config('request.jwt.claim.sub', '11111111-1111-4111-8111-111111111111', true);
+SELECT set_config('request.jwt.claims', '{"sub":"11111111-1111-4111-8111-111111111111","app_metadata":{"hope_first_password_complete":true}}', true);
 SET LOCAL ROLE authenticated;
 DO $$
 BEGIN
@@ -100,6 +125,7 @@ RESET ROLE;
 
 SET LOCAL ROLE authenticated;
 SELECT set_config('request.jwt.claim.sub', '22222222-2222-4222-8222-222222222222', true);
+SELECT set_config('request.jwt.claims', '{"sub":"22222222-2222-4222-8222-222222222222","app_metadata":{"hope_first_password_complete":true}}', true);
 DO $$
 BEGIN
     BEGIN
@@ -129,6 +155,7 @@ UPDATE public.app_user SET is_blocked = FALSE
 
 SET LOCAL ROLE authenticated;
 SELECT set_config('request.jwt.claim.sub', '11111111-1111-4111-8111-111111111111', true);
+SELECT set_config('request.jwt.claims', '{"sub":"11111111-1111-4111-8111-111111111111","app_metadata":{"hope_first_password_complete":true}}', true);
 DO $$
 BEGIN
     BEGIN
