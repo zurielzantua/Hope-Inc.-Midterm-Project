@@ -6,8 +6,10 @@ import ts from 'typescript';
 const uri = (source) => `data:text/javascript;base64,${Buffer.from(source).toString('base64')}`;
 const compile = (source) => ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText;
 const coreUrl = uri(compile(await readFile(new URL('../lib/auth/core.ts', import.meta.url), 'utf8')));
+const originUrl = uri(compile(await readFile(new URL('../lib/auth/request-origin.ts', import.meta.url), 'utf8')));
 const flowSource = (await readFile(new URL('../lib/auth/first-password.ts', import.meta.url), 'utf8'))
-  .replace("from '@/lib/auth/core'", `from '${coreUrl}'`);
+  .replace("from '@/lib/auth/core'", `from '${coreUrl}'`)
+  .replace("from '@/lib/auth/request-origin'", `from '${originUrl}'`);
 const flowUrl = uri(compile(flowSource));
 const serverUrl = uri(`
   export const authorizeRequest = async () => ({ allowed: true, role: 'superadmin' });
@@ -90,6 +92,22 @@ test('Supabase adapter loads the existing identity and issues an invite with the
   const invitationId = await deps.prepareInvitation('user-1', 'invite', Math.floor(Date.now() / 1000) + 3600);
   assert.equal(await deps.sendInvite(target.email, 'https://hope.example/set-password', 'user-1', 'invite', invitationId), 'user-1');
   assert.deepEqual(state.calls.at(-1), ['invite', 'user@example.test', { redirectTo: 'https://hope.example/set-password' }]);
+});
+
+test('Supabase invite adapter preserves Yahoo and institutional recipient addresses', async (t) => {
+  const oldSecret = process.env.SUPABASE_SECRET_KEY;
+  process.env.SUPABASE_SECRET_KEY = 'test-server-secret';
+  t.after(() => { if (oldSecret === undefined) delete process.env.SUPABASE_SECRET_KEY; else process.env.SUPABASE_SECRET_KEY = oldSecret; delete globalThis.__hopeSetupProbe; });
+  for (const email of ['person@yahoo.com', 'student@university.edu', 'student@dept.university.edu.ph']) {
+    const state = probe();
+    state.user.email = email;
+    globalThis.__hopeSetupProbe = state;
+    const deps = firstPasswordDependencies();
+    const target = await deps.loadTarget('user-1');
+    const invitationId = await deps.prepareInvitation('user-1', 'invite', Math.floor(Date.now() / 1000) + 3600);
+    assert.equal(await deps.sendInvite(target.email, 'https://hope.example/set-password', 'user-1', 'invite', invitationId), 'user-1');
+    assert.deepEqual(state.calls.at(-1), ['invite', email, { redirectTo: 'https://hope.example/set-password' }]);
+  }
 });
 
 test('confirmed incomplete identities use an existing-user magic link without creating another account', async (t) => {

@@ -6,8 +6,12 @@ import ts from 'typescript';
 const coreSource = await readFile(new URL('../lib/auth/core.ts', import.meta.url), 'utf8');
 const coreOutput = ts.transpileModule(coreSource, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText;
 const coreUrl = `data:text/javascript;base64,${Buffer.from(coreOutput).toString('base64')}`;
+const originSource = await readFile(new URL('../lib/auth/request-origin.ts', import.meta.url), 'utf8');
+const originOutput = ts.transpileModule(originSource, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText;
+const originUrl = `data:text/javascript;base64,${Buffer.from(originOutput).toString('base64')}`;
 const source = (await readFile(new URL('../lib/auth/first-password.ts', import.meta.url), 'utf8'))
-  .replace("from '@/lib/auth/core'", `from '${coreUrl}'`);
+  .replace("from '@/lib/auth/core'", `from '${coreUrl}'`)
+  .replace("from '@/lib/auth/request-origin'", `from '${originUrl}'`);
 const output = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText;
 const { handleIssueFirstPasswordInvite, handleVerifyFirstPasswordInvite, handleFirstPasswordStatus, handleCompleteFirstPassword, isInvalidInviteError } = await import(`data:text/javascript;base64,${Buffer.from(output).toString('base64')}`);
 
@@ -102,6 +106,22 @@ test('trusted Superadmin can issue an invite for an approved existing unconfirme
   assert.doesNotMatch(await response.text(), /user@example\.test|user-1/);
 });
 
+test('first-password invitations accept Yahoo and institutional email domains', async () => {
+  for (const email of ['person@yahoo.com', 'student@university.edu', 'student@dept.university.edu.ph']) {
+    const deps = dependencies({ target: {
+      authUserId: targetId,
+      email,
+      authEmail: email,
+      emailConfirmedAt: null,
+      setupClaimId: null,
+      account: approvedSetupAccount,
+    } });
+    const response = await handleIssueFirstPasswordInvite(json({ authUserId: targetId }), deps);
+    assert.equal(response.status, 202, email);
+    assert.equal(deps.calls.find(([name]) => name === 'sendInvite')[1], email);
+  }
+});
+
 test('disabled setup and unauthorized issuers cannot send invitations', async () => {
   const disabled = dependencies({});
   disabled.enabled = false;
@@ -157,6 +177,30 @@ test('invite delivery and target lookup errors return generic unavailable respon
   assert.ok(delivery.calls.some(([name]) => name === 'clearInvitation'));
   const target = dependencies({ targetError: true });
   assert.equal((await handleIssueFirstPasswordInvite(json({ authUserId: targetId }), target)).status, 503);
+});
+
+test('setup invitations map the Auth email-rate-limit code to the rate-limited response', async () => {
+  const deps = dependencies();
+  deps.sendInvite = async () => {
+    throw Object.assign(new Error('private provider detail'), { code: 'over_email_send_rate_limit' });
+  };
+  const response = await handleIssueFirstPasswordInvite(json({ authUserId: targetId }), deps);
+  assert.equal(response.status, 429);
+  assert.doesNotMatch(await response.text(), /private provider detail/);
+});
+
+test('setup invitations report when the default SMTP provider rejects an external recipient', async () => {
+  const deps = dependencies();
+  deps.sendInvite = async () => {
+    throw Object.assign(new Error('Email address not authorized'), { code: 'email_address_not_authorized' });
+  };
+  const response = await handleIssueFirstPasswordInvite(json({ authUserId: targetId }), deps);
+  assert.equal(response.status, 503);
+  assert.deepEqual(await response.json(), {
+    code: 'smtp_required',
+    error: 'Configure custom SMTP to send setup emails outside the project team.',
+  });
+  assert.ok(deps.calls.some(([name]) => name === 'clearInvitation'));
 });
 
 test('an invitation that returns a different Auth identity is not reported as successful', async () => {

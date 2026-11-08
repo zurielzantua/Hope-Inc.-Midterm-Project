@@ -51,6 +51,15 @@ test('valid reset request is normalized and uses the fixed application callback'
   assert.deepEqual(await response.json(), { status: 'sent' });
 });
 
+test('reset requests accept Yahoo and institutional email domains', async () => {
+  for (const email of ['person@yahoo.com', 'student@university.edu', 'student@dept.university.edu.ph']) {
+    const deps = dependencies();
+    const response = await handlePasswordResetRequest(post('/api/auth/password-reset/request', { email }), deps);
+    assert.equal(response.status, 202, email);
+    assert.equal(deps.calls[0][1], email);
+  }
+});
+
 test('invalid, malformed, and unexpected reset request fields are rejected', async () => {
   for (const body of [null, {}, { email: 'bad-email' }, { email: 'x'.repeat(321) }, { email: 'user@example.test', role: 'admin' }]) {
     const response = await handlePasswordResetRequest(post('/api/auth/password-reset/request', body), dependencies());
@@ -71,6 +80,19 @@ test('reset requests are same-origin and require JSON', async () => {
 test('unknown accounts receive the same non-enumerating response as valid requests', async () => {
   const deps = dependencies({ requestError: { code: 'user_not_found', status: 404 } });
   const response = await handlePasswordResetRequest(post('/api/auth/password-reset/request', { email: 'unknown@example.test' }), deps);
+  assert.equal(response.status, 202);
+  assert.deepEqual(await response.json(), { status: 'sent' });
+});
+
+test('SMTP recipient restrictions use the same non-enumerating reset response', async () => {
+  const providerError = Object.assign(new Error('Email address not authorized'), {
+    code: 'email_address_not_authorized',
+    status: 403,
+  });
+  const response = await handlePasswordResetRequest(
+    post('/api/auth/password-reset/request', { email: 'person@yahoo.com' }),
+    dependencies({ requestError: providerError }),
+  );
   assert.equal(response.status, 202);
   assert.deepEqual(await response.json(), { status: 'sent' });
 });
