@@ -43,6 +43,7 @@ const disabled = () => json(503, { code: 'setup_disabled', error: 'First-passwor
 const misconfigured = () => json(503, { code: 'setup_misconfigured', error: 'First-password setup has an invalid app URL configuration.' });
 const originRejected = () => json(403, { code: 'origin_rejected', error: 'Request not allowed.' });
 const emailFailed = () => json(503, { code: 'email_delivery_failed', error: 'The setup email could not be delivered.' });
+const smtpRequired = () => json(503, { code: 'smtp_required', error: 'Configure custom SMTP to send setup emails outside the project team.' });
 const forbidden = () => json(403, { code: 'invite_ineligible', error: 'This account is not eligible for first-password setup.' });
 const conflict = () => json(409, { code: 'invite_ineligible', error: 'This account is not eligible for first-password setup.' });
 const signInRequired = () => json(401, { code: 'sign_in_required', error: 'Sign in is required.' });
@@ -60,6 +61,12 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+function isExternalRecipientDenied(error: unknown) {
+  if (!isRecord(error)) return false;
+  return error.code === 'email_address_not_authorized' ||
+    (typeof error.message === 'string' && /email address not authorized/i.test(error.message));
+}
+
 function preparePost(request: Request, deps: Dependencies): { response: Response } | { redirectTo: string } {
   if (!deps.enabled) return { response: disabled() };
   const resolution = resolveRedirect(request, deps.appOrigin, '/set-password');
@@ -70,6 +77,10 @@ function preparePost(request: Request, deps: Dependencies): { response: Response
 
 export function isInvalidInviteError(error: unknown) {
   return isRecord(error) && ['otp_expired', 'invite_not_found', 'validation_failed'].includes(String(error.code));
+}
+
+function isRateLimitError(error: unknown) {
+  return isRecord(error) && (error.status === 429 || error.code === 'over_email_send_rate_limit');
 }
 
 export async function handleIssueFirstPasswordInvite(request: Request, deps: Dependencies) {
@@ -115,7 +126,8 @@ export async function handleIssueFirstPasswordInvite(request: Request, deps: Dep
     return json(202, { sent: true });
   } catch (error) {
     await deps.clearInvitation(authUserId, invitationId).catch(() => {});
-    if (isRecord(error) && error.status === 429) return rateLimited();
+    if (isRateLimitError(error)) return rateLimited();
+    if (isExternalRecipientDenied(error)) return smtpRequired();
     return emailFailed();
   }
 }
@@ -133,10 +145,8 @@ function accountResponse(account: Account) {
 }
 
 export async function handleVerifyFirstPasswordInvite(request: Request, deps: Dependencies) {
-  if (!deps.enabled) return unavailable();
-  const redirectTo = setupRedirect(deps.appOrigin);
-  if (!redirectTo) return unavailable();
-  if (!allowedPost(request, redirectTo)) return json(403, { error: 'Request not allowed.' });
+  const prepared = preparePost(request, deps);
+  if ('response' in prepared) return prepared.response;
   let body: unknown;
   try { body = await request.json(); } catch { return json(400, { error: 'The invitation link is invalid or expired.' }); }
   if (!isRecord(body) || Object.keys(body).length !== 3 || typeof body.tokenHash !== 'string' || !body.tokenHash || body.tokenHash.length > 512 || body.tokenHash.trim() !== body.tokenHash || !['invite', 'magiclink'].includes(String(body.type)) || typeof body.invitationId !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(body.invitationId)) {
@@ -180,10 +190,8 @@ export async function handleFirstPasswordStatus(deps: Dependencies) {
 }
 
 export async function handleCompleteFirstPassword(request: Request, deps: Dependencies) {
-  if (!deps.enabled) return unavailable();
-  const redirectTo = setupRedirect(deps.appOrigin);
-  if (!redirectTo) return unavailable();
-  if (!allowedPost(request, redirectTo)) return json(403, { error: 'Request not allowed.' });
+  const prepared = preparePost(request, deps);
+  if ('response' in prepared) return prepared.response;
   let body: unknown;
   try { body = await request.json(); } catch { return json(400, { error: 'Enter a valid password.' }); }
   if (!isRecord(body) || Object.keys(body).length !== 1 || typeof body.password !== 'string' || !body.password || body.password.length > 1024) {

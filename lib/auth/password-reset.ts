@@ -45,6 +45,13 @@ function isUnknownUserError(error: unknown) {
   return isRecord(error) && ['user_not_found', 'email_not_found'].includes(String(error.code));
 }
 
+function isEmailAddressNotAuthorizedError(error: unknown) {
+  return isRecord(error) && (
+    error.code === 'email_address_not_authorized' ||
+    (typeof error.message === 'string' && /email address not authorized/i.test(error.message))
+  );
+}
+
 function isInvalidRecoveryError(error: unknown) {
   return isRecord(error) && ['otp_expired', 'otp_not_found', 'invite_not_found', 'token_expired', 'validation_failed'].includes(String(error.code));
 }
@@ -67,7 +74,7 @@ export async function handlePasswordResetRequest(request: Request, deps: Depende
   try {
     await deps.requestReset(body.email.trim().toLowerCase(), redirectTo);
   } catch (error) {
-    if (isUnknownUserError(error)) return json(202, { status: 'sent' });
+    if (isUnknownUserError(error) || isEmailAddressNotAuthorizedError(error)) return json(202, { status: 'sent' });
     if (isRateLimitError(error)) return json(429, { error: 'Too many reset requests. Wait a while, then try again.' });
     return json(503, { error: 'Password reset is temporarily unavailable.' });
   }

@@ -36,7 +36,7 @@ function statusClass(status: Exclude<StatusFilter, 'all'>) {
   return 'border-success/30 bg-success/10 text-success';
 }
 
-function errorMessage(status: number, action: 'create' | 'update' | 'invite' = 'update') {
+function errorMessage(status: number, action: 'create' | 'update' | 'invite' = 'update', code?: string) {
   if (status === 400) return 'Check the entered information and try again.';
   if (status === 404) return 'This account cannot be managed or was not found.';
   if (status === 409 && action === 'create') return 'A user with this email already exists.';
@@ -44,7 +44,28 @@ function errorMessage(status: number, action: 'create' | 'update' | 'invite' = '
   if (status === 409) return 'The last active Superadmin cannot be disabled.';
   if (status === 429) return 'Too many attempts. Wait a while, then try again.';
   if (status === 401 || status === 403) return 'Your session does not allow this action.';
+  if (status === 503 && action === 'invite' && code === 'smtp_required') return 'Configure custom SMTP in Supabase Auth to send setup emails to Yahoo, institutional, and other external addresses.';
+  if (status === 503 && action === 'invite') return 'Setup email could not be delivered. Check Supabase Auth email settings and try again.';
   return 'User Management is temporarily unavailable. Please try again.';
+}
+
+async function issueSetupInvitation(authUserId: string) {
+  const response = await fetch('/api/auth/first-password/invitations', {
+    method: 'POST', headers: { 'content-type': 'application/json' }, cache: 'no-store',
+    body: JSON.stringify({ authUserId }),
+  });
+  if (response.ok) return;
+  const result: unknown = await response.json().catch(() => null);
+  if (result && typeof result === 'object' && 'code' in result && result.code === 'smtp_required') {
+    throw new Error('smtp_required');
+  }
+  throw new Error(String(response.status));
+}
+
+function invitationErrorMessage(reason: unknown) {
+  const code = reason instanceof Error && reason.message === 'smtp_required' ? 'smtp_required' : undefined;
+  const status = reason instanceof Error && /^\d+$/.test(reason.message) ? Number(reason.message) : 503;
+  return errorMessage(status, 'invite', code);
 }
 
 export function UserManagementClient({ actorRole, actorUserId }: { actorRole: ActorRole; actorUserId: string }) {
@@ -150,16 +171,11 @@ export function UserManagementClient({ actorRole, actorUserId }: { actorRole: Ac
     if (busy || actorRole !== 'superadmin' || user.accountState !== 'approved' || user.isBlocked || user.isDeleted || user.setupComplete !== false) return;
     setBusy(true); setError(''); setNotice('');
     try {
-      const response = await fetch('/api/auth/first-password/invitations', {
-        method: 'POST', headers: { 'content-type': 'application/json' }, cache: 'no-store',
-        body: JSON.stringify({ authUserId: user.authUserId }),
-      });
-      if (!response.ok) throw new Error(String(response.status));
+      await issueSetupInvitation(user.authUserId);
       setNotice(user.invitationPending ? 'Setup invitation resent.' : 'Setup invitation sent.');
       await loadUsers(false);
     } catch (reason) {
-      const status = reason instanceof Error && /^\d+$/.test(reason.message) ? Number(reason.message) : 503;
-      setError(errorMessage(status, 'invite'));
+      setError(invitationErrorMessage(reason));
     } finally {
       setBusy(false);
     }
@@ -171,14 +187,10 @@ export function UserManagementClient({ actorRole, actorUserId }: { actorRole: Ac
     try {
       await patchUser({ userId: user.authUserId, accountState: 'approved' });
       try {
-        const response = await fetch('/api/auth/first-password/invitations', {
-          method: 'POST', headers: { 'content-type': 'application/json' }, cache: 'no-store',
-          body: JSON.stringify({ authUserId: user.authUserId }),
-        });
-        if (!response.ok) throw new Error(String(response.status));
+        await issueSetupInvitation(user.authUserId);
         setNotice('User approved and setup invitation sent.');
-      } catch {
-        setNotice('User approved. The setup invitation could not be sent; use Send setup invitation to retry.');
+      } catch (reason) {
+        setNotice(`User approved. ${invitationErrorMessage(reason)} Use Send setup invitation to retry after resolving the email delivery issue.`);
       }
       await loadUsers(false);
     } catch (reason) {

@@ -92,6 +92,16 @@ The trusted server-side password-completion operation must update the Auth
 can observe the new value. Service-role operations bypass RLS and therefore do
 not validate these policies; application-side authorization remains required.
 
+## Auth email delivery and callbacks
+
+Both first-password invitations and password-reset links use Supabase Auth email.
+The default hosted SMTP service is limited to project-team recipients and a low
+send rate; configure a custom SMTP provider in Supabase Auth before sending to
+Yahoo, school, or other external addresses. Do not commit SMTP credentials.
+Set `HOPE_APP_URL` to the public application origin and allowlist the
+`/set-password` and `/reset-password` callback URLs in Supabase Auth. Loopback
+URLs in the local `config.toml` work only on the machine running the app.
+
 The script first shows a dry run, then asks for confirmation before pushing.
 
 ## S1-DBA-04 password-reset token contract
