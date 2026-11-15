@@ -92,7 +92,7 @@ row has a non-empty `encrypted_password`. Supabase's native invite and
 password-reset flows set that password directly, so the database no longer
 depends on a server-side Admin API call or a JWT refresh to unlock RLS.
 
-A signed-in, non-blocked, non-deleted user can now read their own `app_user`
+A signed-in, non-blocked, non-deleted user can read their own `app_user`
 row while `account_state = 'pending'`, so the onboarding screen can show the
 pending state, and role names are readable to signed-in active accounts.
 Module, rights-catalogue, and permission reads still require an approved,
@@ -102,40 +102,30 @@ denied.
 The database cannot process the invite or recovery link itself. The
 application must implement the Auth callback and set-password page, and the
 hosted Supabase project must have the deployed Site URL and redirect URLs
-configured. See "Email delivery and invite links" below.
+configured.
 
 ## Email delivery and invite links
 
-The database stores any valid email address; `app_user.email` has no domain
-check, and no migration contains an email-domain allow-list. Deliverability is
-controlled by Supabase Auth, not PostgreSQL.
+The database accepts any valid email address; `app_user.email` has no domain
+check or email-domain allow-list. Delivery is handled by Supabase Auth.
+Supabase's built-in hosted mailer has a low send rate and only delivers to
+addresses associated with the project's organization. Configure custom SMTP
+before sending to Yahoo, school, or other external addresses.
 
-Supabase's built-in mailer is a testing service. It only delivers to addresses
-that belong to the project's Supabase organization and is limited to roughly two
-messages per hour. Other addresses fail with `Email address not authorized`.
-For a demo or production, configure custom SMTP:
-
-1. Supabase Dashboard → Authentication → SMTP Settings.
-2. Enable custom SMTP with the host, port, username, password, sender email,
-   and sender name from a provider such as Resend, Brevo, SendGrid, or AWS SES.
-   The sender domain must be verified with that provider.
-3. Set Authentication → URL Configuration → Site URL to the deployed app URL
-   (not `http://localhost:3000`). Add the app's callback URL, for example
-   `https://<app>/auth/callback`, to Redirect URLs.
-4. Review Authentication → Rate Limits after enabling SMTP.
-
-The hosted project is configured in the dashboard or with the Management API;
-`supabase/config.toml` only affects a local `supabase start` stack. Never commit
-SMTP passwords or API keys.
+For a deployed app, set `HOPE_APP_URL` and Supabase Auth's Site URL to the
+public application origin. Allowlist the exact `/set-password` and
+`/reset-password` routes in Supabase Auth Redirect URLs. In local development,
+the loopback patterns in `supabase/config.toml` apply only to a local
+`supabase start` stack. The hosted project must be configured in the dashboard
+or with the Management API; never commit SMTP passwords or API keys.
 
 Invite and recovery links are single-use and expire. Opening a link more than
-once, or letting a mail client prefetch it, produces an expired or invalid
-link. The app must handle the link's `code`/`token_hash` (or the implicit-flow
+once, or letting a mail client prefetch it, can produce an expired or invalid
+link. The app must handle the link's `code`/`token_hash` (or implicit-flow
 URL hash), establish the session, and then call
 `supabase.auth.updateUser({ password })` on a set-password page. Admin-sent
-invites cannot use a PKCE code verifier that was created in the admin's
-browser, so use the token-hash/OTP verification flow (or the implicit flow) for
-invites.
+invites cannot use a PKCE code verifier created in the admin's browser, so use
+the token-hash/OTP verification flow or implicit flow for invites.
 
 Creating an Auth user does not create an `app_user` row. The trusted
 registration/provisioning path must insert it with `service_role`; a migration

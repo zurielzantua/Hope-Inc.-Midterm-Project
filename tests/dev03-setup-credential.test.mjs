@@ -1,0 +1,11 @@
+import assert from 'node:assert/strict';
+import {readFile} from 'node:fs/promises';
+import test from 'node:test';
+import ts from 'typescript';
+const source=await readFile(new URL('../lib/auth/setup-credential.ts',import.meta.url),'utf8');
+const output=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText;
+const {createSetupCredential,digestSetupToken,buildSetupLink}=await import(`data:text/javascript;base64,${Buffer.from(output).toString('base64')}`);
+test('setup credentials are high-entropy and expire after fifteen minutes',()=>{const now=Date.parse('2026-01-01T00:00:00Z');const a=createSetupCredential(now),b=createSetupCredential(now);assert.notEqual(a.token,b.token);assert.match(a.token,/^[A-Za-z0-9_-]{43}$/);assert.equal(a.expiresAt,'2026-01-01T00:15:00.000Z');assert.equal(a.digest,digestSetupToken(a.token));assert.notEqual(a.digest,a.token)});
+test('tampered and malformed credentials do not match the digest',()=>{const a=createSetupCredential();const replacement=a.token[0]==='A'?'B':'A';const changed=replacement+a.token.slice(1);assert.notEqual(digestSetupToken(changed),a.digest);for(const value of ['','short',a.token+'x','!'.repeat(43)])assert.equal(digestSetupToken(value),null)});
+test('setup links use a fixed HTTPS origin and keep tokens out of query strings',()=>{const a=createSetupCredential();const link=new URL(buildSetupLink('https://example.test',a.token));assert.equal(link.origin,'https://example.test');assert.equal(link.pathname,'/set-password');assert.equal(link.search,'');assert.equal(new URLSearchParams(link.hash.slice(1)).get('token'),a.token)});
+test('unsafe or user-controlled redirect origins are rejected',()=>{const a=createSetupCredential();for(const value of ['http://example.test','https://example.test/other','https://user:pass@example.test','https://example.test/?next=https://evil.test','javascript:alert(1)'])assert.throws(()=>buildSetupLink(value,a.token))});
