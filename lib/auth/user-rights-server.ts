@@ -7,6 +7,7 @@ function record(value: unknown): value is Record<string, unknown> {
 
 export function userRightsDependencies() {
   return {
+    appOrigin: process.env.HOPE_APP_URL || (process.env.NODE_ENV === 'production' ? undefined : 'http://127.0.0.1:3000'),
     async getActor() {
       const access = await authorizeRequest();
       if (!access.allowed) return null;

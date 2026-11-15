@@ -1,6 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  allowedDevOrigins: ['127.0.0.1'],
   async headers() {
     const resetHeaders = [
       { key: 'Cache-Control', value: 'private, no-store' },

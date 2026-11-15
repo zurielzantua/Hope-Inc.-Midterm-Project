@@ -1,8 +1,11 @@
+import { checkRequestOrigin, isJsonRequest } from '@/lib/auth/request-origin';
+
 type CompletionResult = { updated: true; signedOut: boolean } | { updated: false; reason: 'unauthenticated' | 'weak-password' };
 type Dependencies = {
   appOrigin?: string;
   requestReset: (email: string, redirectTo: string) => Promise<void>;
   verifyRecovery: (tokenHash: string, type: 'recovery') => Promise<boolean>;
+  verifyRecoverySession: (accessToken: string, refreshToken: string) => Promise<boolean>;
   getRecoveryUser: () => Promise<boolean>;
   completeReset: (password: string) => Promise<CompletionResult>;
 };
@@ -28,13 +31,8 @@ function recoveryRedirect(appOrigin: string | undefined) {
   }
 }
 
-function allowedPost(request: Request) {
-  const contentType = request.headers.get('content-type')?.split(';', 1)[0].trim().toLowerCase();
-  try {
-    return request.headers.get('origin') === new URL(request.url).origin && contentType === 'application/json';
-  } catch {
-    return false;
-  }
+function allowedPost(request: Request, appOrigin?: string) {
+  return checkRequestOrigin(request, appOrigin).ok && isJsonRequest(request);
 }
 
 function isRateLimitError(error: unknown) {
@@ -63,7 +61,7 @@ function validEmail(value: unknown): value is string {
 export async function handlePasswordResetRequest(request: Request, deps: Dependencies) {
   const redirectTo = recoveryRedirect(deps.appOrigin);
   if (!redirectTo) return json(503, { error: 'Password reset is temporarily unavailable.' });
-  if (!allowedPost(request)) return json(403, { error: 'Request not allowed.' });
+  if (!allowedPost(request, deps.appOrigin)) return json(403, { error: 'Request not allowed.' });
 
   let body: unknown;
   try { body = await request.json(); } catch { return json(400, { error: 'Enter a valid email address.' }); }
@@ -82,17 +80,28 @@ export async function handlePasswordResetRequest(request: Request, deps: Depende
 }
 
 export async function handleVerifyPasswordReset(request: Request, deps: Dependencies) {
-  if (!allowedPost(request)) return json(403, { error: 'Request not allowed.' });
+  if (!allowedPost(request, deps.appOrigin)) return json(403, { error: 'Request not allowed.' });
   let body: unknown;
   try { body = await request.json(); } catch { return json(400, { error: 'This reset link is invalid, expired, or already used.' }); }
-  if (!isRecord(body) || Object.keys(body).length !== 1 || typeof body.tokenHash !== 'string' || !body.tokenHash || body.tokenHash.trim() !== body.tokenHash || body.tokenHash.length > 512) {
+  if (!isRecord(body)) {
     return json(400, { error: 'This reset link is invalid, expired, or already used.' });
   }
 
+  const fields = Object.keys(body);
+  const tokenHashRequest = fields.length === 1 && fields[0] === 'tokenHash' && typeof body.tokenHash === 'string' &&
+    !!body.tokenHash && body.tokenHash.trim() === body.tokenHash && body.tokenHash.length <= 512;
+  const sessionRequest = fields.length === 2 && fields.includes('accessToken') && fields.includes('refreshToken') &&
+    typeof body.accessToken === 'string' && !!body.accessToken && body.accessToken.trim() === body.accessToken && body.accessToken.length <= 8192 &&
+    typeof body.refreshToken === 'string' && !!body.refreshToken && body.refreshToken.trim() === body.refreshToken && body.refreshToken.length <= 2048;
+  if (!tokenHashRequest && !sessionRequest) return json(400, { error: 'This reset link is invalid, expired, or already used.' });
+
   try {
-    if (!await deps.verifyRecovery(body.tokenHash, 'recovery')) return json(400, { error: 'This reset link is invalid, expired, or already used.' });
+    const verified = tokenHashRequest
+      ? await deps.verifyRecovery(body.tokenHash as string, 'recovery')
+      : await deps.verifyRecoverySession(body.accessToken as string, body.refreshToken as string);
+    if (!verified) return json(400, { error: 'This reset link is invalid, expired, or already used.' });
   } catch (error) {
-    if (isInvalidRecoveryError(error)) return json(400, { error: 'This reset link is invalid, expired, or already used.' });
+    if (tokenHashRequest && isInvalidRecoveryError(error)) return json(400, { error: 'This reset link is invalid, expired, or already used.' });
     return json(503, { error: 'Password reset is temporarily unavailable.' });
   }
   return json(200, { status: 'verified' });
@@ -108,7 +117,7 @@ export async function handlePasswordResetStatus(deps: Dependencies) {
 }
 
 export async function handleCompletePasswordReset(request: Request, deps: Dependencies) {
-  if (!allowedPost(request)) return json(403, { error: 'Request not allowed.' });
+  if (!allowedPost(request, deps.appOrigin)) return json(403, { error: 'Request not allowed.' });
   let body: unknown;
   try { body = await request.json(); } catch { return json(400, { error: 'Enter and confirm your new password.' }); }
   if (!isRecord(body) || Object.keys(body).length !== 2 || typeof body.password !== 'string' || typeof body.confirmation !== 'string' || body.password.length < 6 || body.password.length > 1024 || body.confirmation.length > 1024 || body.password !== body.confirmation) {

@@ -41,7 +41,7 @@ export function ForgotPasswordForm() {
   const messages: Partial<Record<Stage, string>> = {
     invalid: 'Enter a valid email address.',
     submitting: 'Sending reset instructions…',
-    sent: 'If an account exists for that email, reset instructions will be sent. Check your inbox and spam folder.',
+    sent: 'If an account exists and email delivery is enabled for this address, reset instructions will arrive. Check spam or contact an administrator if no email arrives.',
     'rate-limited': 'Too many reset requests. Wait a while, then try again.',
     unavailable: 'Password reset is temporarily unavailable. Please try again later.',
   };

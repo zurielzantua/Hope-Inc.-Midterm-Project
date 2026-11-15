@@ -16,6 +16,10 @@ function isMissingSession(error: { status?: number }) {
   return [400, 401, 403].includes(error.status ?? 0);
 }
 
+function isUuid(value: unknown): value is string {
+  return typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
+
 async function loadTarget(userId: string) {
   const account = await lookupAccount(userId);
   if (!account) return null;
@@ -122,7 +126,7 @@ export function firstPasswordDependencies() {
       });
       if (updateError) throw updateError;
     },
-    async verifyInvite(tokenHash: string, type: 'invite' | 'magiclink', invitationId: string) {
+    async verifyInvite(tokenHash: string, type: 'invite' | 'magiclink', expectedInvitationId?: string) {
       const client = await createSessionClient(true);
       const { data, error } = await client.auth.verifyOtp({ token_hash: tokenHash, type });
       if (error) {
@@ -136,8 +140,9 @@ export function firstPasswordDependencies() {
       const now = Math.floor(Date.now() / 1000);
       const { data: authData, error: authError } = data.user ? await adminClient().auth.admin.getUserById(data.user.id) : { data: { user: null }, error: null };
       const metadata = authData.user?.app_metadata;
+      const invitationId = metadata?.hope_first_password_invitation_id;
       if (claimsError || authError || !data.user || data.user.id !== data.session.user.id || claims?.sub !== data.user.id || typeof claims.session_id !== 'string' || !claims.session_id || typeof claims.exp !== 'number' || !Number.isFinite(claims.exp) || claims.exp <= now ||
-        readSetupCompletion(authData.user, data.user.id) !== false || metadata?.hope_first_password_invitation_id !== invitationId || metadata?.hope_first_password_invitation_type !== type || typeof metadata.hope_first_password_invitation_expires_at !== 'number' || metadata.hope_first_password_invitation_expires_at <= now) {
+        readSetupCompletion(authData.user, data.user.id) !== false || !isUuid(invitationId) || (expectedInvitationId && invitationId !== expectedInvitationId) || metadata?.hope_first_password_invitation_type !== type || typeof metadata.hope_first_password_invitation_expires_at !== 'number' || metadata.hope_first_password_invitation_expires_at <= now) {
         try { await adminClient().auth.admin.signOut(token, 'global'); } catch { /* The incomplete marker still denies ERP access. */ }
         try { await client.auth.signOut({ scope: 'local' }); } catch { /* No setup binding was saved. */ }
         throw new Error('Invitation session could not be verified');
@@ -154,6 +159,75 @@ export function firstPasswordDependencies() {
         sessionId: claims.session_id,
         expiresAt: Math.min(claims.exp, metadata.hope_first_password_invitation_expires_at, now + 3600),
         type,
+        invitationId,
+      };
+    },
+    async verifyInviteSession(accessToken: string, refreshToken: string, expectedInvitationId?: string) {
+      const client = await createSessionClient(true);
+      const clearSession = async (token?: string) => {
+        if (token) {
+          try { await adminClient().auth.admin.signOut(token, 'global'); } catch { /* The incomplete marker still denies ERP access. */ }
+        }
+        try { await client.auth.signOut({ scope: 'local' }); } catch { /* No setup binding was saved. */ }
+      };
+      const { data: sessionData, error: sessionError } = await client.auth.setSession({
+        access_token: accessToken,
+        refresh_token: refreshToken,
+      });
+      if (sessionError) {
+        await clearSession();
+        if (isMissingSession(sessionError)) return null;
+        throw sessionError;
+      }
+      const session = sessionData.session;
+      if (!session || !sessionData.user) {
+        await clearSession(session?.access_token);
+        return null;
+      }
+
+      const token = session.access_token;
+      const [{ data: userData, error: userError }, { data: claimsData, error: claimsError }] = await Promise.all([
+        client.auth.getUser(token),
+        client.auth.getClaims(token),
+      ]);
+      if (userError || claimsError || !userData.user) {
+        await clearSession(token);
+        const authError = userError ?? claimsError;
+        if (authError && isMissingSession(authError)) return null;
+        throw authError ?? new Error('Invite session could not be verified');
+      }
+
+      const userId = userData.user.id;
+      const claims = claimsData?.claims as { sub?: unknown; session_id?: unknown; exp?: unknown } | undefined;
+      const now = Math.floor(Date.now() / 1000);
+      if (session.user.id !== userId || claims?.sub !== userId || typeof claims.session_id !== 'string' || !claims.session_id ||
+          typeof claims.exp !== 'number' || !Number.isFinite(claims.exp) || claims.exp <= now) {
+        await clearSession(token);
+        return null;
+      }
+
+      let target: Awaited<ReturnType<typeof loadTarget>>;
+      try { target = await loadTarget(userId); }
+      catch (error) { await clearSession(token); throw error; }
+      const metadata = target?.authUser.app_metadata;
+      const type = metadata?.hope_first_password_invitation_type;
+      const invitationId = metadata?.hope_first_password_invitation_id;
+      const invitationExpiresAt = metadata?.hope_first_password_invitation_expires_at;
+      if (!target || target.authUserId !== userId || !target.emailConfirmedAt || target.email.trim().toLowerCase() !== target.authEmail?.trim().toLowerCase() ||
+          target.setupClaimId !== null || accountDecision(target.account) !== 'setup-required' ||
+          readSetupCompletion(target.authUser, userId) !== false ||
+          !isUuid(invitationId) || (expectedInvitationId && invitationId !== expectedInvitationId) || !['invite', 'magiclink'].includes(String(type)) ||
+          typeof invitationExpiresAt !== 'number' || invitationExpiresAt <= now) {
+        await clearSession(token);
+        return null;
+      }
+
+      return {
+        userId,
+        accessToken: token,
+        sessionId: claims.session_id,
+        expiresAt: Math.min(claims.exp, invitationExpiresAt, now + 3600),
+        type: type as 'invite' | 'magiclink',
         invitationId,
       };
     },
@@ -238,14 +312,15 @@ export function firstPasswordDependencies() {
       if (await readSetupClaim(userId) !== claimId) throw new Error('Setup claim is no longer valid');
       const { error } = await admin.auth.admin.updateUserById(userId, { password });
       if (error) {
-        if (error.code === 'weak_password') return 'invalid';
+        if (error.code === 'weak_password' || error.status === 422) return 'invalid';
         throw error;
       }
       return 'success';
     },
     async revokeRefreshTokens(accessToken: string) {
       const { error } = await adminClient().auth.admin.signOut(accessToken, 'global');
-      if (error) throw error;
+      // Updating a password can revoke its setup session before this explicit cleanup.
+      if (error && error.code !== 'session_not_found') throw error;
     },
     async clearLocalSession() {
       const client = await createSessionClient(true);

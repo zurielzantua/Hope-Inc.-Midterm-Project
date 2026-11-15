@@ -55,6 +55,13 @@ function dependencies(overrides = {}) {
       if (overrides.verifyError) throw new Error('private auth details');
       return overrides.verifiedSession === undefined ? { userId: 'user-1', accessToken: 'setup-access-token', sessionId: 'session-1', expiresAt: 2000000000, type, invitationId } : overrides.verifiedSession;
     },
+    verifyInviteSession: async (accessToken, refreshToken, invitationId) => {
+      calls.push(['verifyInviteSession', accessToken, refreshToken, invitationId]);
+      if (overrides.sessionVerifyError) throw new Error('private auth details');
+      return overrides.verifiedSession === undefined
+        ? { userId: 'user-1', accessToken, sessionId: 'session-1', expiresAt: 2000000000, type: 'invite', invitationId }
+        : overrides.verifiedSession;
+    },
     getSetupSession: async () => {
       calls.push(['getSetupSession']);
       if (overrides.sessionError) throw new Error('private session details');
@@ -102,7 +109,7 @@ test('trusted Superadmin can issue an invite for an approved existing unconfirme
   const deps = dependencies();
   const response = await handleIssueFirstPasswordInvite(json({ authUserId: targetId }), deps);
   assert.equal(response.status, 202);
-  assert.deepEqual(deps.calls.at(-1), ['sendInvite', 'user@example.test', 'https://hope.example/set-password?setup_invite_id=33333333-3333-4333-8333-333333333333', targetId, 'invite', '33333333-3333-4333-8333-333333333333']);
+  assert.deepEqual(deps.calls.at(-1), ['sendInvite', 'user@example.test', 'https://hope.example/set-password', targetId, 'invite', '33333333-3333-4333-8333-333333333333']);
   assert.doesNotMatch(await response.text(), /user@example\.test|user-1/);
 });
 
@@ -216,6 +223,50 @@ test('explicit invite verification exposes only a setup-ready result', async () 
   assert.equal(response.status, 200);
   assert.deepEqual(await response.json(), { verified: true });
   assert.deepEqual(deps.calls.slice(-3), [['verifyInvite', 'one-time-hash', 'invite', '33333333-3333-4333-8333-333333333333'], ['lookupAccount', 'user-1'], ['markSetupSession', 'user-1', 'session-1', 2000000000, 'invite', '33333333-3333-4333-8333-333333333333']]);
+});
+
+test('token-hash callback works without an invitation id in the redirect URL', async () => {
+  const invitationId = '33333333-3333-4333-8333-333333333333';
+  const deps = dependencies({ verifiedSession: {
+    userId: 'user-1', accessToken: 'setup-access-token', sessionId: 'session-1',
+    expiresAt: 2000000000, type: 'invite', invitationId,
+  } });
+  const response = await handleVerifyFirstPasswordInvite(json({ tokenHash: 'one-time-hash', type: 'invite' }), deps);
+  assert.equal(response.status, 200);
+  assert.ok(deps.calls.some(([name, id, sessionId, , type, savedId]) => name === 'markSetupSession' && id === 'user-1' && sessionId === 'session-1' && type === 'invite' && savedId === invitationId));
+});
+
+test('default Supabase invite session tokens are accepted only through the stored invitation binding', async () => {
+  const deps = dependencies();
+  const invitationId = '33333333-3333-4333-8333-333333333333';
+  const response = await handleVerifyFirstPasswordInvite(json({
+    accessToken: 'verified-access-token',
+    refreshToken: 'verified-refresh-token',
+    invitationId,
+  }), deps);
+  assert.equal(response.status, 200);
+  const responseText = await response.text();
+  assert.deepEqual(JSON.parse(responseText), { verified: true });
+  assert.deepEqual(deps.calls.slice(-3), [
+    ['verifyInviteSession', 'verified-access-token', 'verified-refresh-token', invitationId],
+    ['lookupAccount', 'user-1'],
+    ['markSetupSession', 'user-1', 'session-1', 2000000000, 'invite', invitationId],
+  ]);
+  assert.doesNotMatch(responseText, /verified-access-token|verified-refresh-token/);
+});
+
+test('default Supabase session callback can derive its invitation binding server-side', async () => {
+  const invitationId = '33333333-3333-4333-8333-333333333333';
+  const deps = dependencies({ verifiedSession: {
+    userId: 'user-1', accessToken: 'verified-access-token', sessionId: 'session-1',
+    expiresAt: 2000000000, type: 'invite', invitationId,
+  } });
+  const response = await handleVerifyFirstPasswordInvite(json({
+    accessToken: 'verified-access-token',
+    refreshToken: 'verified-refresh-token',
+  }), deps);
+  assert.equal(response.status, 200);
+  assert.ok(deps.calls.some(([name, id, sessionId, , type, savedId]) => name === 'markSetupSession' && id === 'user-1' && sessionId === 'session-1' && type === 'invite' && savedId === invitationId));
 });
 
 test('a verified invite session is revoked if its trusted session binding cannot be saved', async () => {

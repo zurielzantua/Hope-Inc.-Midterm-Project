@@ -3,7 +3,11 @@ import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import ts from 'typescript';
 
-const source = await readFile(new URL('../lib/auth/user-management.ts', import.meta.url), 'utf8');
+const originSource = await readFile(new URL('../lib/auth/request-origin.ts', import.meta.url), 'utf8');
+const originOutput = ts.transpileModule(originSource, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText;
+const originUrl = `data:text/javascript;base64,${Buffer.from(originOutput).toString('base64')}`;
+const source = (await readFile(new URL('../lib/auth/user-management.ts', import.meta.url), 'utf8'))
+  .replace("from '@/lib/auth/request-origin'", `from '${originUrl}'`);
 const output = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText;
 const { canManageUserRole, visibleRoleCodes, accountStatusLabel, handleListManagedUsers, handleCreateManagedUser, handleUpdateManagedUser } =
   await import(`data:text/javascript;base64,${Buffer.from(output).toString('base64')}`);
@@ -111,6 +115,19 @@ test('Update rejects invalid IDs, cross-origin calls, and unavailable targets sa
   const failed = await handleUpdateManagedUser(patch({ userId: '11111111-1111-4111-8111-111111111111', isBlocked: true }), dependencies({ updateError: new Error('private database details') }));
   assert.equal(failed.status, 503);
   assert.doesNotMatch(await failed.text(), /private database details/);
+});
+
+test('Superadmin approval accepts localhost and 127.0.0.1 origin aliases in development', async (t) => {
+  const previous = process.env.NODE_ENV;
+  process.env.NODE_ENV = 'development';
+  t.after(() => { if (previous === undefined) delete process.env.NODE_ENV; else process.env.NODE_ENV = previous; });
+  const request = new Request('http://127.0.0.1:3000/api/user-management/update', {
+    method: 'PATCH',
+    headers: { origin: 'http://localhost:3000', 'content-type': 'application/json' },
+    body: JSON.stringify({ userId: '11111111-1111-4111-8111-111111111111', accountState: 'approved' }),
+  });
+  const response = await handleUpdateManagedUser(request, dependencies({ actor: { userId: 'root-1', role: 'superadmin' } }));
+  assert.equal(response.status, 200);
 });
 
 test('only Superadmin can approve Pending Users or designate approved Users as Admin', async () => {
