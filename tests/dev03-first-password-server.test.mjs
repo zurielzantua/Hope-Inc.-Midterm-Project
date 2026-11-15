@@ -27,6 +27,7 @@ const source = (await readFile(new URL('../lib/auth/first-password-server.ts', i
   .replace("from '@/lib/supabase/config'", `from '${configUrl}'`)
   .replace("from '@/lib/supabase/server'", `from '${adminUrl}'`)
   .replace("from '@/lib/auth/first-password'", `from '${flowUrl}'`);
+const { handleCompleteFirstPassword } = await import(flowUrl);
 const { firstPasswordDependencies } = await import(uri(compile(source)));
 
 function probe() {
@@ -39,6 +40,12 @@ function probe() {
   };
   const session = { access_token: 'setup-access-token', user: { id: 'user-1' } };
   state.client = { auth: {
+    setSession: async (tokens) => {
+      state.calls.push(['setSession', tokens]);
+      state.user.email_confirmed_at ||= new Date().toISOString();
+      state.implicitSession = { access_token: tokens.access_token, refresh_token: tokens.refresh_token, user: { id: state.user.id } };
+      return { data: { session: state.implicitSession, user: state.user }, error: null };
+    },
     verifyOtp: async (input) => {
       state.calls.push(['verifyOtp', input]);
       if (state.verifyError) return { data: { user: null, session: null }, error: state.verifyError };
@@ -55,10 +62,11 @@ function probe() {
     inviteUserByEmail: async (email, options) => { state.calls.push(['invite', email, options]); return { data: { user: state.user }, error: null }; },
     updateUserById: async (_id, attributes) => {
       state.calls.push([attributes.password ? 'setPassword' : 'updateMetadata', attributes]);
+      if (attributes.password && state.passwordError) return { data: { user: state.user }, error: state.passwordError };
       if (attributes.app_metadata) state.user = { ...state.user, app_metadata: attributes.app_metadata };
       return { data: { user: state.user }, error: null };
     },
-    signOut: async (token, scope) => { state.calls.push(['revoke', token, scope]); return { error: null }; },
+    signOut: async (token, scope) => { state.calls.push(['revoke', token, scope]); return { error: state.signOutError ?? null }; },
   } },
     rpc: async (name, args) => {
       state.calls.push([name, args]);
@@ -167,6 +175,95 @@ test('Supabase adapter binds the verified invite session, revokes it, then marks
   assert.ok(actions.indexOf('setPassword') < actions.indexOf('revoke'));
   assert.ok(actions.indexOf('revoke') < actions.lastIndexOf('updateMetadata'));
   assert.ok(actions.lastIndexOf('updateMetadata') < actions.indexOf('localSignOut'));
+});
+
+test('token-hash callback derives the current invitation id from trusted Auth metadata', async (t) => {
+  const oldSecret = process.env.SUPABASE_SECRET_KEY;
+  process.env.SUPABASE_SECRET_KEY = 'test-server-secret';
+  t.after(() => { if (oldSecret === undefined) delete process.env.SUPABASE_SECRET_KEY; else process.env.SUPABASE_SECRET_KEY = oldSecret; delete globalThis.__hopeSetupProbe; });
+  const state = probe();
+  globalThis.__hopeSetupProbe = state;
+  const deps = firstPasswordDependencies();
+  const invitationId = await deps.prepareInvitation('user-1', 'invite', state.claims.exp);
+  const verified = await deps.verifyInvite('token-hash', 'invite');
+  assert.equal(verified?.invitationId, invitationId);
+});
+
+test('password policy 422 errors are returned as retryable invalid passwords', async (t) => {
+  const oldSecret = process.env.SUPABASE_SECRET_KEY;
+  process.env.SUPABASE_SECRET_KEY = 'test-server-secret';
+  t.after(() => { if (oldSecret === undefined) delete process.env.SUPABASE_SECRET_KEY; else process.env.SUPABASE_SECRET_KEY = oldSecret; delete globalThis.__hopeSetupProbe; });
+  const state = probe();
+  state.user.app_metadata.hope_first_password_session = 'session-1';
+  state.user.app_metadata.hope_first_password_session_expires_at = state.claims.exp;
+  state.claimId = '44444444-4444-4444-8444-444444444444';
+  state.passwordError = { status: 422, code: 'validation_failed' };
+  globalThis.__hopeSetupProbe = state;
+  const result = await firstPasswordDependencies().setPassword('user-1', 'weak-password', 'session-1', state.claimId);
+  assert.equal(result, 'invalid');
+  assert.ok(state.calls.some(([name]) => name === 'setPassword'));
+});
+
+test('default session callback derives the current invitation id from trusted Auth metadata', async (t) => {
+  const oldSecret = process.env.SUPABASE_SECRET_KEY;
+  process.env.SUPABASE_SECRET_KEY = 'test-server-secret';
+  t.after(() => { if (oldSecret === undefined) delete process.env.SUPABASE_SECRET_KEY; else process.env.SUPABASE_SECRET_KEY = oldSecret; delete globalThis.__hopeSetupProbe; });
+  const state = probe();
+  globalThis.__hopeSetupProbe = state;
+  const deps = firstPasswordDependencies();
+  const invitationId = await deps.prepareInvitation('user-1', 'invite', state.claims.exp);
+  const verified = await deps.verifyInviteSession('implicit-access-token', 'implicit-refresh-token');
+  assert.equal(verified?.invitationId, invitationId);
+});
+
+test('Auth session already revoked by password update is accepted as successful cleanup', async (t) => {
+  const oldSecret = process.env.SUPABASE_SECRET_KEY;
+  const oldEnabled = process.env.HOPE_FIRST_PASSWORD_SETUP_ENABLED;
+  const oldAppUrl = process.env.HOPE_APP_URL;
+  process.env.SUPABASE_SECRET_KEY = 'test-server-secret';
+  process.env.HOPE_FIRST_PASSWORD_SETUP_ENABLED = 'true';
+  process.env.HOPE_APP_URL = 'https://hope.example';
+  t.after(() => {
+    if (oldSecret === undefined) delete process.env.SUPABASE_SECRET_KEY; else process.env.SUPABASE_SECRET_KEY = oldSecret;
+    if (oldEnabled === undefined) delete process.env.HOPE_FIRST_PASSWORD_SETUP_ENABLED; else process.env.HOPE_FIRST_PASSWORD_SETUP_ENABLED = oldEnabled;
+    if (oldAppUrl === undefined) delete process.env.HOPE_APP_URL; else process.env.HOPE_APP_URL = oldAppUrl;
+    delete globalThis.__hopeSetupProbe;
+  });
+  const state = probe();
+  state.user.app_metadata.hope_first_password_session = 'session-1';
+  state.user.app_metadata.hope_first_password_session_expires_at = state.claims.exp;
+  state.signOutError = { code: 'session_not_found', status: 403, message: 'Session not found' };
+  globalThis.__hopeSetupProbe = state;
+  const response = await handleCompleteFirstPassword(new Request('https://hope.example/api/auth/first-password/complete', {
+    method: 'POST', headers: { origin: 'https://hope.example', 'content-type': 'application/json' },
+    body: JSON.stringify({ password: 'SecurePassword123' }),
+  }), firstPasswordDependencies());
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { completed: true });
+  assert.equal(state.user.app_metadata.hope_first_password_complete, true);
+  assert.equal(state.user.app_metadata.hope_first_password_session, null);
+
+  state.signOutError = { code: 'server_error', status: 500, message: 'Auth unavailable' };
+  await assert.rejects(firstPasswordDependencies().revokeRefreshTokens('setup-access-token'), error => error.code === 'server_error');
+});
+
+test('default Supabase confirmation session is verified and bound to its stored invite', async (t) => {
+  const oldSecret = process.env.SUPABASE_SECRET_KEY;
+  process.env.SUPABASE_SECRET_KEY = 'test-server-secret';
+  t.after(() => { if (oldSecret === undefined) delete process.env.SUPABASE_SECRET_KEY; else process.env.SUPABASE_SECRET_KEY = oldSecret; delete globalThis.__hopeSetupProbe; });
+  const state = probe();
+  globalThis.__hopeSetupProbe = state;
+  const deps = firstPasswordDependencies();
+  const invitationId = await deps.prepareInvitation('user-1', 'invite', state.claims.exp);
+  const verified = await deps.verifyInviteSession('implicit-access-token', 'implicit-refresh-token', invitationId);
+  assert.deepEqual(verified, {
+    userId: 'user-1', accessToken: 'implicit-access-token', sessionId: 'session-1',
+    expiresAt: state.claims.exp, type: 'invite', invitationId,
+  });
+  assert.deepEqual(state.calls.find(([name]) => name === 'setSession'), ['setSession', {
+    access_token: 'implicit-access-token', refresh_token: 'implicit-refresh-token',
+  }]);
+  assert.ok(state.user.email_confirmed_at);
 });
 
 test('a different Auth session cannot use another invitation session binding', async (t) => {

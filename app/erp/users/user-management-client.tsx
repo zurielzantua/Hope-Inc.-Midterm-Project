@@ -36,17 +36,25 @@ function statusClass(status: Exclude<StatusFilter, 'all'>) {
   return 'border-success/30 bg-success/10 text-success';
 }
 
-function errorMessage(status: number, action: 'create' | 'update' | 'invite' = 'update', code?: string) {
+function errorMessage(status: number, action: 'create' | 'update' | 'invite' = 'update', code?: string, detail?: string) {
   if (status === 400) return 'Check the entered information and try again.';
   if (status === 404) return 'This account cannot be managed or was not found.';
   if (status === 409 && action === 'create') return 'A user with this email already exists.';
   if (status === 409 && action === 'invite') return 'This account is not eligible for a setup invitation.';
   if (status === 409) return 'The last active Superadmin cannot be disabled.';
   if (status === 429) return 'Too many attempts. Wait a while, then try again.';
-  if (status === 401 || status === 403) return 'Your session does not allow this action.';
+  if (status === 401 || status === 403) return detail || 'Your session does not allow this action.';
   if (status === 503 && action === 'invite' && code === 'smtp_required') return 'Configure custom SMTP in Supabase Auth to send setup emails to Yahoo, institutional, and other external addresses.';
   if (status === 503 && action === 'invite') return 'Setup email could not be delivered. Check Supabase Auth email settings and try again.';
   return 'User Management is temporarily unavailable. Please try again.';
+}
+
+function requestErrorMessage(reason: unknown) {
+  const status = reason instanceof Error && /^\d+$/.test(reason.message) ? Number(reason.message) : 503;
+  const detail = reason && typeof reason === 'object' && 'detail' in reason && typeof reason.detail === 'string'
+    ? reason.detail
+    : undefined;
+  return errorMessage(status, 'update', undefined, detail);
 }
 
 async function issueSetupInvitation(authUserId: string) {
@@ -164,7 +172,13 @@ export function UserManagementClient({ actorRole, actorUserId }: { actorRole: Ac
       method: 'PATCH', headers: { 'content-type': 'application/json' }, cache: 'no-store',
       body: JSON.stringify(body),
     });
-    if (!response.ok) throw new Error(String(response.status));
+    if (!response.ok) {
+      const result: unknown = await response.json().catch(() => null);
+      const detail = result && typeof result === 'object' && 'error' in result && typeof result.error === 'string'
+        ? result.error
+        : undefined;
+      throw Object.assign(new Error(String(response.status)), { detail });
+    }
   }
 
   async function sendSetupInvitation(user: UserRow) {
@@ -194,8 +208,7 @@ export function UserManagementClient({ actorRole, actorUserId }: { actorRole: Ac
       }
       await loadUsers(false);
     } catch (reason) {
-      const status = reason instanceof Error && /^\d+$/.test(reason.message) ? Number(reason.message) : 503;
-      setError(errorMessage(status));
+      setError(requestErrorMessage(reason));
     } finally {
       setBusy(false);
     }
@@ -209,8 +222,7 @@ export function UserManagementClient({ actorRole, actorUserId }: { actorRole: Ac
       setNotice('User designated as Admin.');
       await loadUsers(false);
     } catch (reason) {
-      const status = reason instanceof Error && /^\d+$/.test(reason.message) ? Number(reason.message) : 503;
-      setError(errorMessage(status));
+      setError(requestErrorMessage(reason));
     } finally {
       setBusy(false);
     }
@@ -224,8 +236,7 @@ export function UserManagementClient({ actorRole, actorUserId }: { actorRole: Ac
       setNotice(user.isBlocked ? 'User unblocked.' : 'User blocked.');
       await loadUsers(false);
     } catch (reason) {
-      const status = reason instanceof Error && /^\d+$/.test(reason.message) ? Number(reason.message) : 503;
-      setError(errorMessage(status));
+      setError(requestErrorMessage(reason));
     } finally {
       setBusy(false);
     }

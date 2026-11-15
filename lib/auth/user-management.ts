@@ -1,3 +1,5 @@
+import { checkRequestOrigin, isJsonRequest } from '@/lib/auth/request-origin';
+
 export type ManagerRole = 'admin' | 'superadmin';
 export type ManagedRole = 'user' | 'admin' | 'superadmin';
 export type UserManagementRow = {
@@ -20,6 +22,7 @@ export type UserChange =
   | { roleCode: 'admin' };
 
 type Dependencies = {
+  appOrigin?: string;
   getActor: () => Promise<{ userId: string; role: string } | null>;
   listUsers: (role: ManagerRole) => Promise<UserManagementRow[]>;
   createUser: (input: { firstName: string; lastName: string; email: string }) => Promise<Response>;
@@ -35,10 +38,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function allowedPost(request: Request) {
-  const contentType = request.headers.get('content-type')?.split(';', 1)[0].trim().toLowerCase();
-  try { return request.headers.get('origin') === new URL(request.url).origin && contentType === 'application/json'; }
-  catch { return false; }
+function allowedPost(request: Request, appOrigin?: string) {
+  return checkRequestOrigin(request, appOrigin).ok && isJsonRequest(request);
 }
 
 async function managerActor(deps: Dependencies) {
@@ -81,7 +82,7 @@ export async function handleListManagedUsers(deps: Dependencies) {
 }
 
 export async function handleCreateManagedUser(request: Request, deps: Dependencies) {
-  if (!allowedPost(request)) return json(403, { error: 'Request not allowed.' });
+  if (!allowedPost(request, deps.appOrigin)) return json(403, { error: 'Request not allowed.' });
   const access = await managerActor(deps);
   if ('response' in access) return access.response;
 
@@ -109,7 +110,7 @@ export async function handleCreateManagedUser(request: Request, deps: Dependenci
 }
 
 export async function handleUpdateManagedUser(request: Request, deps: Dependencies) {
-  if (!allowedPost(request)) return json(403, { error: 'Request not allowed.' });
+  if (!allowedPost(request, deps.appOrigin)) return json(403, { error: 'Request not allowed.' });
   const access = await managerActor(deps);
   if ('response' in access) return access.response;
 

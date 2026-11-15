@@ -4,10 +4,12 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import Link from 'next/link';
 
 type Stage = 'checking' | 'verify' | 'password' | 'invalid' | 'unavailable' | 'success';
+type SessionTokens = { accessToken: string; refreshToken: string };
 
 export function ResetPasswordForm() {
   const [stage, setStage] = useState<Stage>('checking');
   const [tokenHash, setTokenHash] = useState('');
+  const [sessionTokens, setSessionTokens] = useState<SessionTokens | null>(null);
   const [message, setMessage] = useState('');
   const [signedOut, setSignedOut] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -20,10 +22,12 @@ export function ResetPasswordForm() {
     const fragment = new URLSearchParams(url.hash.slice(1));
     const token = fragment.get('token_hash');
     const type = fragment.get('type');
-    const authError = url.searchParams.has('error') || url.searchParams.has('error_code');
+    const accessToken = fragment.get('access_token');
+    const refreshToken = fragment.get('refresh_token');
+    const authError = url.searchParams.has('error') || url.searchParams.has('error_code') || fragment.has('error') || fragment.has('error_code');
     window.history.replaceState(null, '', url.pathname);
 
-    if (authError || (token && type !== 'recovery')) {
+    if (authError || (token && type !== 'recovery') || ((accessToken || refreshToken) && type !== 'recovery')) {
       setMessage('This reset link is invalid, expired, or already used. Request a new link.');
       setStage('invalid');
       return;
@@ -31,6 +35,16 @@ export function ResetPasswordForm() {
     if (token) {
       setTokenHash(token);
       setStage('verify');
+      return;
+    }
+    if (accessToken && refreshToken) {
+      setSessionTokens({ accessToken, refreshToken });
+      setStage('verify');
+      return;
+    }
+    if (accessToken || refreshToken) {
+      setMessage('This reset link is invalid, expired, or already used. Request a new link.');
+      setStage('invalid');
       return;
     }
 
@@ -52,7 +66,7 @@ export function ResetPasswordForm() {
   }, []);
 
   async function verifyLink() {
-    if (busy || !tokenHash) return;
+    if (busy || (!tokenHash && !sessionTokens)) return;
     setBusy(true);
     setMessage('');
     try {
@@ -60,13 +74,15 @@ export function ResetPasswordForm() {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         cache: 'no-store',
-        body: JSON.stringify({ tokenHash }),
+        body: JSON.stringify(sessionTokens ? sessionTokens : { tokenHash }),
       });
       if (response.ok) {
         setTokenHash('');
+        setSessionTokens(null);
         setStage('password');
       } else if (response.status === 400) {
         setTokenHash('');
+        setSessionTokens(null);
         setMessage('This reset link is invalid, expired, or already used. Request a new link.');
         setStage('invalid');
       } else {

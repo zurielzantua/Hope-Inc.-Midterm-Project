@@ -7,6 +7,10 @@ function isSessionError(error: unknown) {
   return [400, 401, 403].includes(Number(authError.status)) || authError.code === 'session_not_found';
 }
 
+function isSessionNotFound(error: unknown) {
+  return !!error && typeof error === 'object' && (error as { code?: unknown }).code === 'session_not_found';
+}
+
 function isWeakPasswordError(error: unknown) {
   if (!error || typeof error !== 'object') return false;
   const authError = error as { status?: unknown; code?: unknown };
@@ -40,6 +44,49 @@ export function passwordResetDependencies() {
       }
       return true;
     },
+    async verifyRecoverySession(accessToken: string, refreshToken: string) {
+      const client = await createSessionClient(true);
+      const clearSession = async () => {
+        await client.auth.signOut({ scope: 'local' }).catch(() => {});
+      };
+      const { data, error } = await client.auth.setSession({
+        access_token: accessToken,
+        refresh_token: refreshToken,
+      });
+      if (error) {
+        await clearSession();
+        if (isSessionError(error)) return false;
+        throw error;
+      }
+      if (!data.session || !data.user) {
+        await clearSession();
+        return false;
+      }
+
+      const { data: verified, error: userError } = await client.auth.getUser();
+      if (userError) {
+        await clearSession();
+        if (isSessionError(userError)) return false;
+        throw userError;
+      }
+      if (!verified.user || verified.user.id !== data.user.id || data.session.user.id !== data.user.id) {
+        await clearSession();
+        return false;
+      }
+
+      const { data: claimsData, error: claimsError } = await client.auth.getClaims(data.session.access_token);
+      if (claimsError) {
+        await clearSession();
+        if (isSessionError(claimsError)) return false;
+        throw claimsError;
+      }
+      const claims = claimsData?.claims as { sub?: unknown } | undefined;
+      if (claims?.sub !== verified.user.id) {
+        await clearSession();
+        return false;
+      }
+      return true;
+    },
     async getRecoveryUser() {
       const client = await createSessionClient();
       const { data, error } = await client.auth.getUser();
@@ -67,9 +114,9 @@ export function passwordResetDependencies() {
 
       try {
         const { error: signOutError } = await client.auth.signOut({ scope: 'local' });
-        return { updated: true as const, signedOut: !signOutError };
-      } catch {
-        return { updated: true as const, signedOut: false };
+        return { updated: true as const, signedOut: !signOutError || isSessionNotFound(signOutError) };
+      } catch (error) {
+        return { updated: true as const, signedOut: isSessionNotFound(error) };
       }
     },
   };
