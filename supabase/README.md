@@ -44,6 +44,8 @@ Only the DB Admin pushes migrations. Tell the team before pushing because this d
 ./scripts/db-push.sh
 ```
 
+The script first shows a dry run, then asks for confirmation before pushing.
+
 ## S1-DBA-03 account and permission contract
 
 The `20261102000001_hope_accounts_permissions.sql` migration creates:
@@ -76,33 +78,97 @@ server-side operation. The default role lookup is executable only by
 Soft deletion is performed by setting `is_deleted = true`; restoration clears
 that flag on the existing record.
 
-## S1-DEV-03 first-password RLS requirement
+## First-password and password-reset RLS behavior
 
-The `20261104000001_hope_first_password_rls.sql` migration also requires the
-trusted Supabase Auth JWT claim
-`app_metadata.hope_first_password_complete` to be exactly `true` before an
-authenticated user can read `role`, `module`, `right_catalog`, `app_user`, or
-`user_permission`. A missing marker or `false` denies access, as do pending,
-blocked, and soft-deleted application accounts. The policy reads
-`app_metadata` through `auth.jwt()`; it must not be replaced with client-editable
-`user_metadata`.
+`20261104000001_hope_first_password_rls.sql` originally required the trusted
+Supabase Auth JWT claim `app_metadata.hope_first_password_complete` to be
+exactly `true` before an authenticated user could read `role`, `module`,
+`right_catalog`, `app_user`, or `user_permission`.
 
-The trusted server-side password-completion operation must update the Auth
-`app_metadata` marker. The client must then refresh its session/JWT before RLS
-can observe the new value. Service-role operations bypass RLS and therefore do
-not validate these policies; application-side authorization remains required.
+`20261113000001_hope_first_password_onboarding_fix.sql` replaces that
+JWT-only check with `public.has_completed_first_password()`, a locked-down
+`SECURITY DEFINER` helper that returns true when the signed-in `auth.users`
+row has a non-empty `encrypted_password`. Supabase's native invite and
+password-reset flows set that password directly, so the database no longer
+depends on a server-side Admin API call or a JWT refresh to unlock RLS.
 
-## Auth email delivery and callbacks
+A signed-in, non-blocked, non-deleted user can read their own `app_user`
+row while `account_state = 'pending'`, so the onboarding screen can show the
+pending state, and role names are readable to signed-in active accounts.
+Module, rights-catalogue, and permission reads still require an approved,
+non-blocked account with a password. Blocked and soft-deleted accounts remain
+denied.
 
-Both first-password invitations and password-reset links use Supabase Auth email.
-The default hosted SMTP service is limited to project-team recipients and a low
-send rate; configure a custom SMTP provider in Supabase Auth before sending to
-Yahoo, school, or other external addresses. Do not commit SMTP credentials.
-Set `HOPE_APP_URL` to the public application origin and allowlist the
-`/set-password` and `/reset-password` callback URLs in Supabase Auth. Loopback
-URLs in the local `config.toml` work only on the machine running the app.
+The database cannot process the invite or recovery link itself. The
+application must implement the Auth callback and set-password page, and the
+hosted Supabase project must have the deployed Site URL and redirect URLs
+configured.
 
-The script first shows a dry run, then asks for confirmation before pushing.
+## Email delivery and invite links
+
+The database accepts any valid email address; `app_user.email` has no domain
+check or email-domain allow-list. Delivery is handled by Supabase Auth.
+Supabase's built-in hosted mailer has a low send rate and only delivers to
+addresses associated with the project's organization. Configure custom SMTP
+before sending to Yahoo, school, or other external addresses.
+
+For a deployed app, set `HOPE_APP_URL` and Supabase Auth's Site URL to the
+public application origin. Allowlist the exact `/set-password` and
+`/reset-password` routes in Supabase Auth Redirect URLs. In local development,
+the loopback patterns in `supabase/config.toml` apply only to a local
+`supabase start` stack. The hosted project must be configured in the dashboard
+or with the Management API; never commit SMTP passwords or API keys.
+
+Invite and recovery links are single-use and expire. Opening a link more than
+once, or letting a mail client prefetch it, can produce an expired or invalid
+link. The app must handle the link's `code`/`token_hash` (or implicit-flow
+URL hash), establish the session, and then call
+`supabase.auth.updateUser({ password })` on a set-password page. Admin-sent
+invites cannot use a PKCE code verifier created in the admin's browser, so use
+the token-hash/OTP verification flow or implicit flow for invites.
+
+Creating an Auth user does not create an `app_user` row. The trusted
+registration/provisioning path must insert it with `service_role`; a migration
+cannot create Auth users or passwords safely.
+
+### Provisioning an invited account
+
+Supabase's invite creates only the `auth.users` row. To create the matching
+pending profile once, run this in the SQL editor, replacing the email (do not
+commit personal addresses):
+
+```sql
+WITH target AS (
+    SELECT id,
+           email,
+           COALESCE(raw_user_meta_data ->> 'first_name', split_part(email, '@', 1)) AS first_name,
+           COALESCE(raw_user_meta_data ->> 'last_name', '') AS last_name
+      FROM auth.users
+     WHERE lower(email) = lower('member@example.com')
+)
+INSERT INTO public.app_user (auth_user_id, first_name, last_name, email, role_id, account_state)
+SELECT target.id,
+       target.first_name,
+       target.last_name,
+       target.email,
+       (SELECT role_id FROM public.role WHERE role_code = 'user' AND NOT is_deleted),
+       'pending'
+  FROM target
+ON CONFLICT (auth_user_id) DO NOTHING;
+```
+
+To make a team member an approved Superadmin after they accept the invite,
+update the row deliberately:
+
+```sql
+UPDATE public.app_user
+   SET role_id = (SELECT role_id FROM public.role WHERE role_code = 'superadmin' AND NOT is_deleted),
+       account_state = 'approved'
+ WHERE lower(email) = lower('member@example.com');
+```
+
+This bypasses the application approval flow. Limit it to the initial S1-DBA-05
+team accounts, and never store the email list or passwords in the repository.
 
 ## S1-DBA-04 password-reset token contract
 
