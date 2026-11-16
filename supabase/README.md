@@ -29,12 +29,17 @@ SQL migrations are stored in `supabase/migrations/`.
 
 ## Environment variables
 
-Create `.env.local` in the project root:
+Copy `.env.local.example` to `.env.local` in the project root and fill its placeholders. Public client configuration uses:
 
 ```dotenv
 NEXT_PUBLIC_SUPABASE_URL=https://xpfojvcfhudwtritpofx.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=<ask the DB Admin or copy from the Supabase dashboard>
 ```
+
+Registration and trusted account-management operations also require
+`SUPABASE_SECRET_KEY`. Ask the DB Admin for it through the team's private
+channel and keep it server-only: do not prefix it with `NEXT_PUBLIC_` and never
+commit the real value or `.env.local`.
 
 ## Running migrations
 
