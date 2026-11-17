@@ -378,7 +378,7 @@ export default function HomePage() {
 
                 <div className="mt-5 space-y-4">
                   {activeTab === "login" && (
-                    <form className="space-y-4" onSubmit={handleLogin} aria-busy={loginBusy}>
+                    <form className="space-y-4" method="post" action="/api/auth/login" onSubmit={handleLogin} aria-busy={loginBusy}>
                       {loginError && <p role="alert" className="rounded-sm border border-error/45 bg-error/10 px-3 py-2.5 text-sm text-white">{loginError}</p>}
                       <div>
                         <label className="field-label" htmlFor="login-email">
