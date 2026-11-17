@@ -2,6 +2,7 @@
 const nextConfig = {
   reactStrictMode: true,
   allowedDevOrigins: ['127.0.0.1'],
+  experimental: { agentUpgrade: 'security' },
   async headers() {
     const resetHeaders = [
       { key: 'Cache-Control', value: 'private, no-store' },
