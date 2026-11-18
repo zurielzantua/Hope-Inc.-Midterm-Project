@@ -39,6 +39,11 @@ function dependencies(overrides = {}) {
         account: approvedSetupAccount,
       } : overrides.target;
     },
+    recoverStaleSetupClaim: async (id, claimId) => {
+      calls.push(['recoverStaleSetupClaim', id, claimId]);
+      if (overrides.recoverError) throw new Error('private recovery details');
+      return overrides.recoverStaleClaim ?? false;
+    },
     prepareInvitation: async (id, type, expiresAt) => {
       calls.push(['prepareInvitation', id, type, expiresAt]);
       if (overrides.prepareError) throw new Error('private metadata details');
@@ -85,10 +90,10 @@ function dependencies(overrides = {}) {
       calls.push(['markSetupSession', id, sessionId, expiresAt, type, invitationId]);
       if (overrides.bindError) throw new Error('private metadata error');
     },
-    setPassword: async (id, password, sessionId, claimId) => {
-      calls.push(['setPassword', id, password, sessionId, claimId]);
-      if (overrides.passwordError) throw new Error('private auth error');
-      return overrides.passwordResult ?? 'success';
+    completeSetup: async (id, password, sessionId, claimId) => {
+      calls.push(['completeSetup', id, password, sessionId, claimId]);
+      if (overrides.completeError) throw new Error('private auth error');
+      return overrides.completeResult ?? 'completed';
     },
     revokeRefreshTokens: async (token) => {
       calls.push(['revokeRefreshTokens', token]);
@@ -97,10 +102,6 @@ function dependencies(overrides = {}) {
     clearLocalSession: async () => {
       calls.push(['clearLocalSession']);
       if (overrides.clearError) throw new Error('private cookie error');
-    },
-    markSetupComplete: async (id, sessionId, claimId) => {
-      calls.push(['markSetupComplete', id, sessionId, claimId]);
-      if (overrides.markError) throw new Error('private metadata error');
     },
   };
 }
@@ -111,6 +112,36 @@ test('trusted Superadmin can issue an invite for an approved existing unconfirme
   assert.equal(response.status, 202);
   assert.deepEqual(deps.calls.at(-1), ['sendInvite', 'user@example.test', 'https://hope.example/set-password', targetId, 'invite', '33333333-3333-4333-8333-333333333333']);
   assert.doesNotMatch(await response.text(), /user@example\.test|user-1/);
+});
+
+test('a stale completion claim can be recovered before issuing a replacement invite', async () => {
+  const claimedTarget = {
+    authUserId: targetId, email: 'user@example.test', authEmail: 'user@example.test', emailConfirmedAt: null,
+    setupClaimId: 'stale-claim', setupSessionId: 'expired-session',
+    setupSessionExpiresAt: 1793491200, account: approvedSetupAccount,
+  };
+  const deps = dependencies({ target: claimedTarget, recoverStaleClaim: true });
+  let loads = 0;
+  deps.loadTarget = async (id) => {
+    deps.calls.push(['loadTarget', id]);
+    return loads++ === 0 ? claimedTarget : { ...claimedTarget, setupClaimId: null };
+  };
+  const response = await handleIssueFirstPasswordInvite(json({ authUserId: targetId }), deps);
+  assert.equal(response.status, 202);
+  assert.deepEqual(deps.calls.find(([name]) => name === 'recoverStaleSetupClaim'), ['recoverStaleSetupClaim', targetId, 'stale-claim']);
+  assert.ok(deps.calls.findIndex(([name]) => name === 'recoverStaleSetupClaim') < deps.calls.findIndex(([name]) => name === 'prepareInvitation'));
+  assert.ok(deps.calls.some(([name]) => name === 'sendInvite'));
+});
+
+test('a claim that is still in progress cannot be recovered or re-invited', async () => {
+  const deps = dependencies({ target: {
+    authUserId: targetId, email: 'user@example.test', authEmail: 'user@example.test', emailConfirmedAt: null,
+    setupClaimId: 'active-claim', setupSessionId: 'active-session',
+    setupSessionExpiresAt: Math.floor(Date.now() / 1000) + 1800, account: approvedSetupAccount,
+  }, recoveryResult: false });
+  const response = await handleIssueFirstPasswordInvite(json({ authUserId: targetId }), deps);
+  assert.equal(response.status, 409);
+  assert.equal(deps.calls.some(([name]) => name === 'sendInvite'), false);
 });
 
 test('first-password invitations accept Yahoo and institutional email domains', async () => {
@@ -303,7 +334,7 @@ test('cross-origin verification and password completion are rejected before Auth
   assert.equal(verification.calls.some(([name]) => name === 'verifyInvite'), false);
   const completion = dependencies();
   assert.equal((await handleCompleteFirstPassword(request({ password: 'SecurePass123' }), completion)).status, 403);
-  assert.equal(completion.calls.some(([name]) => name === 'setPassword'), false);
+  assert.equal(completion.calls.some(([name]) => name === 'completeSetup'), false);
 });
 
 test('verification rejects and revokes sessions for accounts that are Pending, blocked, or deleted', async () => {
@@ -326,51 +357,50 @@ test('setup status requires a live eligible setup session', async () => {
   assert.equal((await handleFirstPasswordStatus(dependencies({ account: { ...approvedSetupAccount, is_blocked: true } }))).status, 403);
 });
 
-test('password completion revokes refresh tokens before setting the trusted completion marker', async () => {
+test('password and trusted completion marker are committed through one Auth operation', async () => {
   const deps = dependencies();
   const response = await handleCompleteFirstPassword(json({ password: 'SecurePass123' }), deps);
   assert.equal(response.status, 200);
-  assert.deepEqual(deps.calls.slice(-5), [
+  assert.deepEqual(deps.calls.slice(-3), [
     ['claimSetup', 'user-1', 'session-1'],
-    ['setPassword', 'user-1', 'SecurePass123', 'session-1', '44444444-4444-4444-8444-444444444444'],
-    ['revokeRefreshTokens', 'setup-access-token'],
-    ['markSetupComplete', 'user-1', 'session-1', '44444444-4444-4444-8444-444444444444'],
+    ['completeSetup', 'user-1', 'SecurePass123', 'session-1', '44444444-4444-4444-8444-444444444444'],
     ['clearLocalSession'],
   ]);
+  assert.equal(deps.calls.some(([name]) => name === 'revokeRefreshTokens'), false);
   assert.doesNotMatch(await response.text(), /SecurePass123|setup-access-token/);
 });
 
 test('invalid passwords can be retried while the verified setup session remains active', async () => {
-  const deps = dependencies({ passwordResult: 'invalid' });
+  const deps = dependencies({ completeResult: 'invalid' });
   const response = await handleCompleteFirstPassword(json({ password: 'weak' }), deps);
   assert.equal(response.status, 400);
   assert.ok(deps.calls.some(([name]) => name === 'claimSetup'));
   assert.ok(deps.calls.some(([name]) => name === 'releaseSetupClaim'));
   assert.equal(deps.calls.some(([name]) => name === 'revokeRefreshTokens'), false);
-  assert.equal(deps.calls.some(([name]) => name === 'markSetupComplete'), false);
+  assert.equal(deps.calls.some(([name]) => name === 'clearLocalSession'), false);
 });
 
 test('concurrent completion requests allow only the atomic claim winner to set a password', async () => {
   const deps = dependencies();
   let claimed = false;
-  let passwordCalls = 0;
+  let completionCalls = 0;
   deps.claimSetup = async () => {
     if (claimed) return null;
     claimed = true;
     return '44444444-4444-4444-8444-444444444444';
   };
-  deps.setPassword = async () => { passwordCalls += 1; return 'success'; };
+  deps.completeSetup = async () => { completionCalls += 1; return 'completed'; };
   const [left, right] = await Promise.all([
     handleCompleteFirstPassword(json({ password: 'SecurePass123' }), deps),
     handleCompleteFirstPassword(json({ password: 'SecurePass123' }), deps),
   ]);
   assert.deepEqual([left.status, right.status].sort(), [200, 409]);
-  assert.equal(passwordCalls, 1);
+  assert.equal(completionCalls, 1);
 });
 
-test('a failed Auth password update releases only its own claim for a valid retry', async () => {
-  const deps = dependencies({ passwordResult: 'invalid' });
-  assert.equal((await handleCompleteFirstPassword(json({ password: 'weak' }), deps)).status, 400);
+test('a definitive Auth rejection releases only its own claim for a valid retry', async () => {
+  const deps = dependencies({ completeResult: 'rejected' });
+  assert.equal((await handleCompleteFirstPassword(json({ password: 'SecurePass123' }), deps)).status, 503);
   assert.ok(deps.calls.some(([name, , claimId]) => name === 'releaseSetupClaim' && claimId === '44444444-4444-4444-8444-444444444444'));
 });
 
@@ -387,21 +417,13 @@ test('completion fails closed for missing sessions and ineligible accounts', asy
   }
 });
 
-test('completion does not mark setup complete when password setting or session revocation fails', async () => {
-  const passwordFailure = dependencies({ passwordError: true });
-  assert.equal((await handleCompleteFirstPassword(json({ password: 'SecurePass123' }), passwordFailure)).status, 503);
-  assert.equal(passwordFailure.calls.some(([name]) => name === 'markSetupComplete'), false);
-  const revokeFailure = dependencies({ revokeError: true });
-  assert.equal((await handleCompleteFirstPassword(json({ password: 'SecurePass123' }), revokeFailure)).status, 503);
-  assert.equal(revokeFailure.calls.some(([name]) => name === 'markSetupComplete'), false);
-});
-
-test('metadata update failure after revocation never reports setup success', async () => {
-  const deps = dependencies({ markError: true });
-  const response = await handleCompleteFirstPassword(json({ password: 'SecurePass123' }), deps);
+test('an ambiguous Auth completion failure retains the claim for stale-session recovery', async () => {
+  const passwordFailure = dependencies({ completeError: true });
+  const response = await handleCompleteFirstPassword(json({ password: 'SecurePass123' }), passwordFailure);
   assert.equal(response.status, 503);
-  assert.ok(deps.calls.some(([name]) => name === 'revokeRefreshTokens'));
-  assert.doesNotMatch(await response.text(), /private metadata error|SecurePass123/);
+  assert.equal(passwordFailure.calls.some(([name]) => name === 'releaseSetupClaim'), false);
+  assert.equal(passwordFailure.calls.some(([name]) => name === 'clearLocalSession'), false);
+  assert.doesNotMatch(await response.text(), /private auth error|SecurePass123/);
 });
 
 test('malformed requests and unexpected database failures return controlled responses', async () => {

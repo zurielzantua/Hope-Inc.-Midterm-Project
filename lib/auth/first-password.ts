@@ -10,6 +10,8 @@ type InviteTarget = {
   authEmail: string | null;
   emailConfirmedAt: string | null;
   setupClaimId: string | null;
+  setupSessionId: string | null;
+  setupSessionExpiresAt: number | null;
   account: Account;
 };
 
@@ -18,6 +20,7 @@ type Dependencies = {
   appOrigin: string | undefined;
   authorizeIssuer: () => Promise<{ allowed: boolean; role?: string }>;
   loadTarget: (userId: string) => Promise<InviteTarget | null>;
+  recoverStaleSetupClaim: (userId: string, claimId: string) => Promise<boolean>;
   prepareInvitation: (userId: string, type: 'invite' | 'magiclink', expiresAt: number) => Promise<string>;
   sendInvite: (email: string, redirectTo: string, userId: string, type: 'invite' | 'magiclink', invitationId: string) => Promise<string | null>;
   clearInvitation: (userId: string, invitationId: string) => Promise<void>;
@@ -28,10 +31,9 @@ type Dependencies = {
   markSetupSession: (userId: string, sessionId: string, expiresAt: number, type: 'invite' | 'magiclink', invitationId: string) => Promise<void>;
   claimSetup: (userId: string, sessionId: string) => Promise<string | null>;
   releaseSetupClaim: (userId: string, claimId: string) => Promise<void>;
-  setPassword: (userId: string, password: string, sessionId: string, claimId: string) => Promise<'success' | 'invalid'>;
+  completeSetup: (userId: string, password: string, sessionId: string, claimId: string) => Promise<'completed' | 'invalid' | 'rejected'>;
   revokeRefreshTokens: (accessToken: string) => Promise<void>;
   clearLocalSession: () => Promise<void>;
-  markSetupComplete: (userId: string, sessionId: string, claimId: string) => Promise<void>;
 };
 
 const json = (status: number, body: Record<string, unknown>) => Response.json(body, {
@@ -107,9 +109,22 @@ export async function handleIssueFirstPasswordInvite(request: Request, deps: Dep
   if (
     target.authUserId.toLowerCase() !== authUserId ||
     !target.email || target.email.trim().toLowerCase() !== target.authEmail?.trim().toLowerCase() ||
-    target.setupClaimId !== null ||
     accountDecision(target.account) !== 'setup-required'
   ) return conflict();
+
+  if (target.setupClaimId !== null) {
+    let recovered: boolean;
+    try { recovered = await deps.recoverStaleSetupClaim(authUserId, target.setupClaimId); } catch { return unavailable(); }
+    if (!recovered) return conflict();
+    try { target = await deps.loadTarget(authUserId); } catch { return unavailable(); }
+    if (!target) return accountNotFound();
+    if (
+      target.authUserId.toLowerCase() !== authUserId ||
+      !target.email || target.email.trim().toLowerCase() !== target.authEmail?.trim().toLowerCase() ||
+      target.setupClaimId !== null ||
+      accountDecision(target.account) !== 'setup-required'
+    ) return conflict();
+  }
 
   const type = target.emailConfirmedAt === null ? 'invite' : 'magiclink';
   const expiresAt = Math.floor(Date.now() / 1000) + 3600;
@@ -235,27 +250,14 @@ export async function handleCompleteFirstPassword(request: Request, deps: Depend
   try { claimId = await deps.claimSetup(session.userId, session.sessionId); } catch { console.error('First-password completion failed: claim'); return unavailable(); }
   if (!claimId) return json(409, { error: 'Password setup is already in progress or needs administrator review.' });
 
-  try {
-    if (await deps.setPassword(session.userId, body.password, session.sessionId, claimId) === 'invalid') {
-      try { await deps.releaseSetupClaim(session.userId, claimId); } catch { console.error('First-password completion failed: claim release'); return unavailable(); }
-      return json(400, { error: 'The password does not meet the current Auth requirements.' });
-    }
-  } catch {
-    console.error('First-password completion failed: password update');
-    return unavailable();
-  }
+  let completion: 'completed' | 'invalid' | 'rejected';
+  try { completion = await deps.completeSetup(session.userId, body.password, session.sessionId, claimId); }
+  catch { console.error('First-password completion failed: atomic Auth update'); return unavailable(); }
 
-  try {
-    await deps.revokeRefreshTokens(session.accessToken);
-  } catch {
-    console.error('First-password completion failed: session revocation');
-    return unavailable();
-  }
-
-  try {
-    await deps.markSetupComplete(session.userId, session.sessionId, claimId);
-  } catch {
-    console.error('First-password completion failed: completion marker');
+  if (completion !== 'completed') {
+    try { await deps.releaseSetupClaim(session.userId, claimId); }
+    catch { console.error('First-password completion failed: claim release'); return unavailable(); }
+    if (completion === 'invalid') return json(400, { error: 'The password does not meet the current Auth requirements.' });
     return unavailable();
   }
 

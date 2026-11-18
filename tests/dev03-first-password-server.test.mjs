@@ -61,9 +61,11 @@ function probe() {
     getUserById: async () => ({ data: { user: state.user }, error: null }),
     inviteUserByEmail: async (email, options) => { state.calls.push(['invite', email, options]); return { data: { user: state.user }, error: null }; },
     updateUserById: async (_id, attributes) => {
-      state.calls.push([attributes.password ? 'setPassword' : 'updateMetadata', attributes]);
+      state.calls.push([attributes.password ? 'completeSetup' : 'updateMetadata', attributes]);
       if (attributes.password && state.passwordError) return { data: { user: state.user }, error: state.passwordError };
       if (attributes.app_metadata) state.user = { ...state.user, app_metadata: attributes.app_metadata };
+      if (attributes.password) state.passwordSet = true;
+      if (attributes.password && state.throwAfterComplete) throw new Error('response lost after Auth commit');
       return { data: { user: state.user }, error: null };
     },
     signOut: async (token, scope) => { state.calls.push(['revoke', token, scope]); return { error: state.signOutError ?? null }; },
@@ -148,7 +150,7 @@ test('reissuing setup invalidates the prior setup-session binding', async (t) =>
   assert.equal(state.user.app_metadata.hope_first_password_session_expires_at, null);
 });
 
-test('Supabase adapter binds the verified invite session, revokes it, then marks setup complete', async (t) => {
+test('Supabase adapter atomically sets the password and trusted completion marker', async (t) => {
   const oldSecret = process.env.SUPABASE_SECRET_KEY;
   process.env.SUPABASE_SECRET_KEY = 'test-server-secret';
   t.after(() => { if (oldSecret === undefined) delete process.env.SUPABASE_SECRET_KEY; else process.env.SUPABASE_SECRET_KEY = oldSecret; delete globalThis.__hopeSetupProbe; });
@@ -164,17 +166,71 @@ test('Supabase adapter binds the verified invite session, revokes it, then marks
   const claimId = await deps.claimSetup(verified.userId, verified.sessionId);
   assert.ok(claimId);
   assert.equal(await deps.claimSetup(verified.userId, verified.sessionId), null);
-  assert.equal(await deps.setPassword(verified.userId, 'test-password', verified.sessionId, claimId), 'success');
-  await deps.revokeRefreshTokens(verified.accessToken);
-  await deps.markSetupComplete(verified.userId, verified.sessionId, claimId);
+  assert.equal(await deps.completeSetup(verified.userId, 'test-password', verified.sessionId, claimId), 'completed');
   await deps.clearLocalSession();
+  assert.equal(state.passwordSet, true);
   assert.equal(state.user.app_metadata.hope_first_password_complete, true);
   assert.equal(state.user.app_metadata.hope_first_password_session, null);
   assert.equal(state.user.app_metadata.hope_first_password_session_expires_at, null);
   const actions = state.calls.map(([name]) => name);
-  assert.ok(actions.indexOf('setPassword') < actions.indexOf('revoke'));
-  assert.ok(actions.indexOf('revoke') < actions.lastIndexOf('updateMetadata'));
-  assert.ok(actions.lastIndexOf('updateMetadata') < actions.indexOf('localSignOut'));
+  const update = state.calls.find(([name]) => name === 'completeSetup');
+  assert.ok(update);
+  assert.equal(update[1].password, 'test-password');
+  assert.equal(update[1].app_metadata.hope_first_password_complete, true);
+  assert.equal(actions.includes('revoke'), false);
+  assert.ok(actions.indexOf('completeSetup') < actions.indexOf('localSignOut'));
+});
+
+test('a lost Auth response reconciles to success when the atomic update committed', async (t) => {
+  const oldSecret = process.env.SUPABASE_SECRET_KEY;
+  process.env.SUPABASE_SECRET_KEY = 'test-server-secret';
+  t.after(() => { if (oldSecret === undefined) delete process.env.SUPABASE_SECRET_KEY; else process.env.SUPABASE_SECRET_KEY = oldSecret; delete globalThis.__hopeSetupProbe; });
+  const state = probe();
+  state.user.app_metadata.hope_first_password_session = 'session-1';
+  state.user.app_metadata.hope_first_password_session_expires_at = state.claims.exp;
+  state.claimId = '44444444-4444-4444-8444-444444444444';
+  state.throwAfterComplete = true;
+  globalThis.__hopeSetupProbe = state;
+  const result = await firstPasswordDependencies().completeSetup('user-1', 'test-password', 'session-1', state.claimId);
+  assert.equal(result, 'completed');
+  assert.equal(state.user.app_metadata.hope_first_password_complete, true);
+});
+
+test('stale claims recover only after the bound setup session expires with grace', async (t) => {
+  const oldSecret = process.env.SUPABASE_SECRET_KEY;
+  process.env.SUPABASE_SECRET_KEY = 'test-server-secret';
+  t.after(() => { if (oldSecret === undefined) delete process.env.SUPABASE_SECRET_KEY; else process.env.SUPABASE_SECRET_KEY = oldSecret; delete globalThis.__hopeSetupProbe; });
+  const state = probe();
+  const now = Math.floor(Date.now() / 1000);
+  state.claimId = '44444444-4444-4444-8444-444444444444';
+  state.user.app_metadata.hope_first_password_session = 'expired-session';
+  state.user.app_metadata.hope_first_password_session_expires_at = now - 6 * 60;
+  globalThis.__hopeSetupProbe = state;
+  assert.equal(await firstPasswordDependencies().recoverStaleSetupClaim('user-1', state.claimId), true);
+  assert.equal(state.claimId, null);
+
+  state.claimId = '44444444-4444-4444-8444-444444444444';
+  state.user.app_metadata.hope_first_password_session_expires_at = now - 60;
+  assert.equal(await firstPasswordDependencies().recoverStaleSetupClaim('user-1', state.claimId), false);
+  assert.equal(state.claimId, '44444444-4444-4444-8444-444444444444');
+});
+
+test('concurrent stale-claim recovery has one compare-and-release winner', async (t) => {
+  const oldSecret = process.env.SUPABASE_SECRET_KEY;
+  process.env.SUPABASE_SECRET_KEY = 'test-server-secret';
+  t.after(() => { if (oldSecret === undefined) delete process.env.SUPABASE_SECRET_KEY; else process.env.SUPABASE_SECRET_KEY = oldSecret; delete globalThis.__hopeSetupProbe; });
+  const state = probe();
+  const now = Math.floor(Date.now() / 1000);
+  state.claimId = '44444444-4444-4444-8444-444444444444';
+  state.user.app_metadata.hope_first_password_session = 'expired-session';
+  state.user.app_metadata.hope_first_password_session_expires_at = now - 6 * 60;
+  globalThis.__hopeSetupProbe = state;
+  const deps = firstPasswordDependencies();
+  const results = await Promise.all([
+    deps.recoverStaleSetupClaim('user-1', state.claimId),
+    deps.recoverStaleSetupClaim('user-1', state.claimId),
+  ]);
+  assert.deepEqual(results.sort(), [false, true]);
 });
 
 test('token-hash callback derives the current invitation id from trusted Auth metadata', async (t) => {
@@ -199,9 +255,9 @@ test('password policy 422 errors are returned as retryable invalid passwords', a
   state.claimId = '44444444-4444-4444-8444-444444444444';
   state.passwordError = { status: 422, code: 'validation_failed' };
   globalThis.__hopeSetupProbe = state;
-  const result = await firstPasswordDependencies().setPassword('user-1', 'weak-password', 'session-1', state.claimId);
+  const result = await firstPasswordDependencies().completeSetup('user-1', 'weak-password', 'session-1', state.claimId);
   assert.equal(result, 'invalid');
-  assert.ok(state.calls.some(([name]) => name === 'setPassword'));
+  assert.ok(state.calls.some(([name]) => name === 'completeSetup'));
 });
 
 test('default session callback derives the current invitation id from trusted Auth metadata', async (t) => {
