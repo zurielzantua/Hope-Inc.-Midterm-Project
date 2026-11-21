@@ -1,0 +1,56 @@
+<ns0:svg xmlns:ns0="http://www.w3.org/2000/svg" width="1440" height="900" viewBox="0 0 1440 900" role="img" aria-labelledby="svg-title svg-desc">
+  <ns0:title id="svg-title">S2-UIX-02 — Add Price</ns0:title>
+  <ns0:desc id="svg-desc">Add Price form with product context, effective date, unit price and key validation notes.</ns0:desc>
+  <ns0:rect width="1440" height="900" fill="#F4F7F8" />
+  <ns0:rect x="0" y="0" width="1440" height="76" rx="0" fill="#163341" stroke="none" stroke-width="1" />
+  <ns0:text x="32" y="31" font-family="Aptos, Segoe UI, Helvetica Neue, sans-serif" font-size="18" font-weight="700" fill="#FFFFFF" text-anchor="start">HOPE, INC. / ERP SYSTEM</ns0:text>
+  <ns0:text x="32" y="56" font-family="Aptos, Segoe UI, Helvetica Neue, sans-serif" font-size="12" font-weight="400" fill="#D6E1E4" text-anchor="start">ERP  ·  PRODUCT MANAGEMENT</ns0:text>
+  <ns0:text x="1398" y="43" font-family="Aptos, Segoe UI, Helvetica Neue, sans-serif" font-size="12" font-weight="700" fill="#D6E1E4" text-anchor="end">ADMIN / PERMITTED USER</ns0:text>
+  <ns0:rect x="0" y="76" width="248" height="824" rx="0" fill="#FFFFFF" stroke="none" stroke-width="1" />
+  <ns0:line x1="247" y1="76" x2="247" y2="900" stroke="#DAE4E6" stroke-width="1" />
+  <ns0:text x="26" y="119" font-family="Aptos, Segoe UI, Helvetica Neue, sans-serif" font-size="19" font-weight="700" fill="#163341" text-anchor="start">HOPE ERP</ns0:text>
+  <ns0:text x="26" y="141" font-family="Aptos, Segoe UI, Helvetica Neue, sans-serif" font-size="10" font-weight="700" fill="#60757F" text-anchor="start">MODULES</ns0:text>
+  <ns0:rect x="12" y="160" width="220" height="44" rx="7" fill="none" stroke="none" stroke-width="1" />
+  <ns0:text x="30" y="188" font-family="Aptos, Segoe UI, Helvetica Neue, sans-serif" font-size="14" font-weight="400" fill="#60757F" text-anchor="start">Customer Management</ns0:text>
+  <ns0:rect x="19" y="216" width="3" height="32" rx="2" fill="#0B6E75" stroke="none" stroke-width="1" />
+  <ns0:rect x="12" y="210" width="220" height="44" rx="7" fill="#E6F1F2" stroke="none" stroke-width="1" />
+  <ns0:text x="30" y="238" font-family="Aptos, Segoe UI, Helvetica Neue, sans-serif" font-size="14" font-weight="600" fill="#163341" text-anchor="start">Product Management</ns0:text>
+  <ns0:rect x="12" y="260" width="220" height="44" rx="7" fill="none" stroke="none" stroke-width="1" />
+  <ns0:text x="30" y="288" font-family="Aptos, Segoe UI, Helvetica Neue, sans-serif" font-size="14" font-weight="400" fill="#60757F" text-anchor="start">Human Resources</ns0:text>
+  <ns0:rect x="12" y="310" width="220" height="44" rx="7" fill="none" stroke="none" stroke-width="1" />
+  <ns0:text x="30" y="338" font-family="Aptos, Segoe UI, Helvetica Neue, sans-serif" font-size="14" font-weight="400" fill="#60757F" text-anchor="start">Sales Management</ns0:text>
+  <ns0:rect x="12" y="360" width="220" height="44" rx="7" fill="none" stroke="none" stroke-width="1" />
+  <ns0:text x="30" y="388" font-family="Aptos, Segoe UI, Helvetica Neue, sans-serif" font-size="14" font-weight="400" fill="#60757F" text-anchor="start">Reports</ns0:text>
+  <ns0:line x1="24" y1="844" x2="224" y2="844" stroke="#DAE4E6" stroke-width="1" />
+  <ns0:text x="28" y="873" font-family="Aptos, Segoe UI, Helvetica Neue, sans-serif" font-size="11" font-weight="400" fill="#60757F" text-anchor="start">Only authorized modules are shown</ns0:text>
+  <ns0:g id="main-content">
+    <ns0:text x="282" y="116" font-family="Aptos, Segoe UI, Helvetica Neue, sans-serif" font-size="11" font-weight="700" fill="#0B6E75" text-anchor="start">PRICE HISTORY</ns0:text>
+    <ns0:text x="282" y="154" font-family="Aptos, Segoe UI, Helvetica Neue, sans-serif" font-size="28" font-weight="700" fill="#163341" text-anchor="start">Add Price</ns0:text>
+    <ns0:text x="282" y="181" font-family="Aptos, Segoe UI, Helvetica Neue, sans-serif" font-size="14" font-weight="400" fill="#60757F" text-anchor="start">Create an effective-dated price for the selected product.</ns0:text>
+    <ns0:rect x="280" y="202" width="746" height="520" rx="10" fill="#FFFFFF" stroke="#DAE4E6" stroke-width="1" />
+    <ns0:text x="312" y="241" font-family="Aptos, Segoe UI, Helvetica Neue, sans-serif" font-size="17" font-weight="700" fill="#163341" text-anchor="start">Price details</ns0:text>
+    <ns0:line x1="312" y1="258" x2="994" y2="258" stroke="#DAE4E6" stroke-width="1" />
+    <ns0:text x="312" y="284" font-family="Aptos, Segoe UI, Helvetica Neue, sans-serif" font-size="10" font-weight="700" fill="#60757F" text-anchor="start">PRODUCT</ns0:text>
+    <ns0:rect x="312" y="294" width="682" height="44" rx="6" fill="#F1F4F5" stroke="#DAE4E6" stroke-width="1" />
+    <ns0:text x="326" y="322" font-family="Aptos, Segoe UI, Helvetica Neue, sans-serif" font-size="13" font-weight="400" fill="#60757F" text-anchor="start">AD0001  ·  Toshiba Canvio 1 TB</ns0:text>
+    <ns0:text x="312" y="366" font-family="Aptos, Segoe UI, Helvetica Neue, sans-serif" font-size="10" font-weight="700" fill="#60757F" text-anchor="start">EFFECTIVE DATE *</ns0:text>
+    <ns0:rect x="312" y="376" width="300" height="44" rx="6" fill="#FFFFFF" stroke="#DAE4E6" stroke-width="1" />
+    <ns0:text x="326" y="404" font-family="Aptos, Segoe UI, Helvetica Neue, sans-serif" font-size="13" font-weight="400" fill="#1A2B35" text-anchor="start">YYYY-MM-DD</ns0:text>
+    <ns0:text x="640" y="366" font-family="Aptos, Segoe UI, Helvetica Neue, sans-serif" font-size="10" font-weight="700" fill="#60757F" text-anchor="start">UNIT PRICE *</ns0:text>
+    <ns0:rect x="640" y="376" width="354" height="44" rx="6" fill="#FFFFFF" stroke="#DAE4E6" stroke-width="1" />
+    <ns0:text x="654" y="404" font-family="Aptos, Segoe UI, Helvetica Neue, sans-serif" font-size="13" font-weight="400" fill="#1A2B35" text-anchor="start">0.00</ns0:text>
+    <ns0:text x="312" y="448" font-family="Aptos, Segoe UI, Helvetica Neue, sans-serif" font-size="12" font-weight="400" fill="#60757F" text-anchor="start">Unit Price must be greater than 0. A product can have one price per effective date.</ns0:text>
+    <ns0:line x1="312" y1="622" x2="994" y2="622" stroke="#DAE4E6" stroke-width="1" />
+    <ns0:rect x="778" y="650" width="96" height="38" rx="7" fill="#FFFFFF" stroke="#DAE4E6" stroke-width="1" />
+    <ns0:text x="826.0" y="674" font-family="Aptos, Segoe UI, Helvetica Neue, sans-serif" font-size="13" font-weight="600" fill="#163341" text-anchor="middle">Cancel</ns0:text>
+    <ns0:rect x="886" y="650" width="108" height="38" rx="7" fill="#163341" stroke="#163341" stroke-width="1" />
+    <ns0:text x="940.0" y="674" font-family="Aptos, Segoe UI, Helvetica Neue, sans-serif" font-size="13" font-weight="600" fill="#FFFFFF" text-anchor="middle">Save Price</ns0:text>
+    <ns0:rect x="1050" y="202" width="366" height="250" rx="10" fill="#EDF5F5" stroke="#C7DEDF" stroke-width="1" />
+    <ns0:text x="1074" y="234" font-family="Aptos, Segoe UI, Helvetica Neue, sans-serif" font-size="11" font-weight="700" fill="#0B6E75" text-anchor="start">RIGHTS &amp; HISTORY</ns0:text>
+    <ns0:text x="1074" y="267" font-family="Aptos, Segoe UI, Helvetica Neue, sans-serif" font-size="13" font-weight="400" fill="#1A2B35" text-anchor="start">Show this form only with product:add_price.</ns0:text>
+    <ns0:text x="1074" y="292" font-family="Aptos, Segoe UI, Helvetica Neue, sans-serif" font-size="13" font-weight="400" fill="#1A2B35" text-anchor="start">The selected Product Code is fixed to</ns0:text>
+    <ns0:text x="1074" y="317" font-family="Aptos, Segoe UI, Helvetica Neue, sans-serif" font-size="13" font-weight="400" fill="#1A2B35" text-anchor="start">the parent product.</ns0:text>
+    <ns0:text x="1074" y="342" font-family="Aptos, Segoe UI, Helvetica Neue, sans-serif" font-size="13" font-weight="400" fill="#1A2B35" text-anchor="start">Reject duplicate Product Code +</ns0:text>
+    <ns0:text x="1074" y="367" font-family="Aptos, Segoe UI, Helvetica Neue, sans-serif" font-size="13" font-weight="400" fill="#1A2B35" text-anchor="start">Effective Date keys and non-positive prices.</ns0:text>
+  </ns0:g>
+</ns0:svg>
