@@ -31,4 +31,14 @@ The function is `STABLE` and `SECURITY INVOKER`, reads through the existing `sec
 
 `supabase/tests/hope_product_price_as_of.sql` creates a unique product fixture with older, current, soft-deleted, and future price rows, verifies the as-of results while executing as `service_role`, checks the function/view security and execute grants, then rolls back the fixture and audit entries. Run it as an isolated database owner that can `SET ROLE service_role`.
 
+### Local runtime result (2026-11-22)
+
+The regression script passed against the complete project migration chain in a
+disposable PostgreSQL 17.11 database. The local database used a minimal `auth`
+compatibility shim and temporary API-role table grants to represent the
+application privileges needed by the test; these grants were not added to a
+project migration. The test finished with `ROLLBACK`. This does not verify the
+hosted project's Data API grants, Supabase Auth/JWT behavior, or hosted RLS
+configuration; no hosted database was changed.
+
 The tracked migrations enable RLS on `pricehist` but define no `pricehist` read policy. The application’s existing server-side data path uses a secret-key Supabase client after server authorization; this function follows that server-only pattern and does not add a broad read policy.
