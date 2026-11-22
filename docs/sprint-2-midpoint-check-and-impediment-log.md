@@ -10,9 +10,9 @@ No meeting, attendance, team feedback, test execution, or retrospective event is
 
 - Live GitHub shows **30 Sprint 2 issues: 3 closed and 27 open**.
 - Three task issues have merged implementation PRs. A fourth merged PR is a UIX-01 asset correction. The merged code is not evidence of hosted Supabase, RLS, or email verification.
-- Tracker snapshot after this report draft: 3 DONE, 1 LOCAL_COMMITTED, 1 AWAITING_OWNER_PR, 1 PREPARED, 1 IN_PROGRESS, and 23 NOT_STARTED across all 30 tasks. Of the 17 remaining agent-managed tasks, #150, #155, and #160 are marked READY; 14 remain dependency- or queue-blocked. The six Tester issues are publicly open; Tester progress is unknown and is not inferred from issue state.
+- Tracker snapshot: 3 DONE, 2 LOCAL_COMMITTED, 1 AWAITING_OWNER_PR, 1 IN_PROGRESS, and 23 NOT_STARTED across all 30 tasks. Of the 17 remaining unstarted agent-managed tasks, #150, #155, and #160 are marked READY; 14 remain dependency- or queue-blocked. The six Tester issues are publicly open; Tester progress is unknown and is not inferred from issue state.
 - No Sprint 2 task PR is currently open in the live PR listing.
-- The current `s2/sm-03` worktree started clean at integration base `4cf794516df7a59178ff75fc6cffb3972f77862c`. This report is its sole intended change and remains uncommitted.
+- The current `s2/sm-03` worktree started clean at integration base `4cf794516df7a59178ff75fc6cffb3972f77862c`. This report is its sole task-specific change; it is locally committed and remains unpushed.
 
 ## Issue and PR register
 
@@ -39,7 +39,7 @@ Issue states and PR states below were queried read-only from GitHub on the snaps
 | [#150](https://github.com/zurielzantua/Hope-Inc.-Midterm-Project/issues/150) | S2-DEV-04 | `gabrielzantua` | Open | Tracker: ready, queued behind DEV-01 because both use the shared module route. The Product active view and UIX-02 wireframe are already in the integration base; DBA-01 indexes remain a final performance-verification dependency. |
 | [#151](https://github.com/zurielzantua/Hope-Inc.-Midterm-Project/issues/151) | S2-UIX-03 | `ElishLim` | Open | Native subagent dispatched to the isolated `s2/uix-03` worktree; completion is pending. Its wireframe prerequisites are merged; no task commit or PR yet. |
 | [#152](https://github.com/zurielzantua/Hope-Inc.-Midterm-Project/issues/152) | S2-DBA-03 | `marcoasegurado` | Open | Tracker: not started; no task PR observed. Confirm accepted payment-term and product-unit values with the Developer before finalizing constraints. |
-| [#153](https://github.com/zurielzantua/Hope-Inc.-Midterm-Project/issues/153) | S2-SM-03 | `zurielzantua` | Open | This report is prepared but uncommitted in `s2/sm-03`; orchestrator review remains, then the owner reviews before PR submission. No task PR observed. |
+| [#153](https://github.com/zurielzantua/Hope-Inc.-Midterm-Project/issues/153) | S2-SM-03 | `zurielzantua` | Open | This report is locally committed on `s2/sm-03` and unpushed; owner review and PR creation remain pending. No task PR observed. |
 | [#154](https://github.com/zurielzantua/Hope-Inc.-Midterm-Project/issues/154) | S2-DEV-03 | `gabrielzantua` | Open | Tracker: not started; no task PR observed. Customer soft-delete/restore needs the agreed active-child behavior and error contract. |
 | [#155](https://github.com/zurielzantua/Hope-Inc.-Midterm-Project/issues/155) | S2-DBA-02 | `marcoasegurado` | Open | Tracker: ready; no task PR observed. Sprint 1 Price History schema and active view are present in the base; local database runtime verification is unavailable. |
 | [#156](https://github.com/zurielzantua/Hope-Inc.-Midterm-Project/issues/156) | S2-TST-01 | `laurencechua` | Open | Human Tester issue; no task PR observed; progress unknown. Tester owns Customer cases and execution evidence. |
