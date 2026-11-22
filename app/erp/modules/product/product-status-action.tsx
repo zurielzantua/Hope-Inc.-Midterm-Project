@@ -3,11 +3,17 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 
-export function ProductStatusAction({ productCode, isDeleted }: { productCode: string; isDeleted: boolean }) {
+export function ProductStatusAction({ productCode, isDeleted, canDelete, canRestore }: {
+  productCode: string;
+  isDeleted: boolean;
+  canDelete: boolean;
+  canRestore: boolean;
+}) {
   const router = useRouter();
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const nextIsDeleted = !isDeleted;
+  if (isDeleted ? !canRestore : !canDelete) return null;
 
   async function changeStatus() {
     if (saving) return;

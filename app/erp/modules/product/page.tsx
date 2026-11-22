@@ -32,7 +32,10 @@ export default async function ProductPage({ searchParams }: ProductPageProps) {
   const isManager = role === 'admin' || role === 'superadmin';
   const canAdd = rights.includes('add_product');
   const canEdit = rights.includes('edit_product');
-  const canChangeStatus = rights.includes('delete_product');
+  const canDelete = rights.includes('delete_product');
+  const canRestore = isManager;
+  const canChangeStatus = result.kind === 'ok' && result.products.some((product) =>
+    product.status === 'inactive' ? canRestore : canDelete);
   const search = result.kind === 'ok' ? result.filters.search : typeof params.q === 'string' ? params.q : '';
   const status = result.kind === 'ok' ? result.filters.status : typeof params.status === 'string' && ['active', 'inactive', 'all'].includes(params.status) ? params.status : 'all';
   const notice = params.notice === 'created' ? 'Product added.' : params.notice === 'updated' ? 'Product updated.'
@@ -108,7 +111,14 @@ export default async function ProductPage({ searchParams }: ProductPageProps) {
                     {isManager && <td className="px-4 py-3">{product.stamp || '—'}</td>}
                     {(canEdit || canChangeStatus) && <td className="px-4 py-3"><div className="flex flex-wrap items-center gap-3">
                       {canEdit && <Link href={`/erp/modules/product/${encodeURIComponent(product.productCode)}/edit`} className="font-semibold text-teal underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal">Edit</Link>}
-                      {canChangeStatus && <ProductStatusAction productCode={product.productCode} isDeleted={product.status === 'inactive'} />}
+                      {(product.status === 'inactive' ? canRestore : canDelete) && (
+                        <ProductStatusAction
+                          productCode={product.productCode}
+                          isDeleted={product.status === 'inactive'}
+                          canDelete={canDelete}
+                          canRestore={canRestore}
+                        />
+                      )}
                     </div></td>}
                   </tr>
                 ))}

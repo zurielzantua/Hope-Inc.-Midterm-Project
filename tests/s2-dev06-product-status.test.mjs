@@ -32,7 +32,7 @@ const dependencies = (overrides = {}) => ({
   ...overrides,
 });
 
-test('Both transitions require the verified Product module and delete_product right', async () => {
+test('Soft delete requires delete_product and the verified Product module', async () => {
   let writes = 0;
   for (const deniedActor of [null, actor('user', []), actor('admin', ['delete_product'], ['customer'])]) {
     const response = await handleProductStatusRequest(request({ isDeleted: true }), 'AD0001', dependencies({
@@ -48,7 +48,7 @@ test('Users may deactivate with the assigned right, but only Admins and Superadm
   const transitions = [];
   for (const [role, isDeleted] of [['user', true], ['admin', false], ['superadmin', false]]) {
     const response = await handleProductStatusRequest(request({ isDeleted }), 'ad0001', dependencies({
-      getActor: async () => actor(role),
+      getActor: async () => actor(role, role === 'user' ? ['delete_product'] : []),
       updateProductStatus: async (...args) => { transitions.push(args); return true; },
     }));
     assert.equal(response.status, 200);
@@ -60,6 +60,13 @@ test('Users may deactivate with the assigned right, but only Admins and Superadm
     updateProductStatus: async () => { writes += 1; return true; },
   }));
   assert.equal(denied.status, 403);
+  assert.equal(writes, 0);
+
+  const wrongModuleRestore = await handleProductStatusRequest(request({ isDeleted: false }), 'AD0001', dependencies({
+    getActor: async () => actor('admin', [], ['customer']),
+    updateProductStatus: async () => { writes += 1; return true; },
+  }));
+  assert.equal(wrongModuleRestore.status, 403);
   assert.equal(writes, 0);
 });
 
@@ -142,11 +149,13 @@ test('Database adapter changes only is_deleted and atomically compares the expec
   ]);
 });
 
-test('Status controls are hidden without delete_product while Add and Edit rights remain independent', async () => {
+test('Delete controls follow delete_product while manager Restore stays available', async () => {
   const page = await readFile(new URL('../app/erp/modules/product/page.tsx', import.meta.url), 'utf8');
   const action = await readFile(new URL('../app/erp/modules/product/product-status-action.tsx', import.meta.url), 'utf8');
   assert.match(page, /rights\.includes\('delete_product'\)/);
-  assert.match(page, /canChangeStatus && <ProductStatusAction/);
+  assert.match(page, /const canRestore = isManager/);
+  assert.match(page, /product\.status === 'inactive' \? canRestore : canDelete/);
+  assert.match(page, /<ProductStatusAction/);
   assert.match(page, /canAdd && <Link href="\/erp\/modules\/product\/new"/);
   assert.match(page, /canEdit && <Link href=\{`\/erp\/modules\/product/);
   assert.match(action, /\/api\/product\/.*\/status/);

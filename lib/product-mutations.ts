@@ -50,7 +50,7 @@ function blockedByActiveChildren(error: unknown) {
     /^Cannot delete product row: \d+ active related record\(s\) still exist\.$/.test(error.message);
 }
 
-async function authorizedActor(request: Request, requiredRight: 'add_product' | 'edit_product' | 'delete_product', deps: Dependencies) {
+async function authorizedActor(request: Request, requiredRight: 'add_product' | 'edit_product' | 'delete_product' | null, deps: Dependencies) {
   if (!checkRequestOrigin(request, deps.appOrigin).ok || !isJsonRequest(request)) {
     return { response: json(403, { error: 'Request not allowed.' }) };
   }
@@ -59,7 +59,8 @@ async function authorizedActor(request: Request, requiredRight: 'add_product' | 
   catch { return { response: json(503, { error: 'Product Management is temporarily unavailable.' }) }; }
   if (!actor) return { response: json(401, { error: 'Sign in to continue.' }) };
   if (!['user', 'admin', 'superadmin'].includes(actor.role) ||
-      !actor.modules.some(({ code }) => code === 'product') || !actor.rights.includes(requiredRight)) {
+      !actor.modules.some(({ code }) => code === 'product') ||
+      (requiredRight !== null && !actor.rights.includes(requiredRight))) {
     return { response: json(403, { error: 'You do not have permission to perform this Product action.' }) };
   }
   return { actor };
@@ -103,13 +104,17 @@ export async function handleUpdateProductRequest(request: Request, productCode: 
 }
 
 export async function handleProductStatusRequest(request: Request, productCode: string, deps: Dependencies) {
-  const access = await authorizedActor(request, 'delete_product', deps);
+  // The Student Guide's 36-right catalog has Delete but no separate Restore right.
+  const access = await authorizedActor(request, null, deps);
   if ('response' in access) return access.response;
   const normalizedCode = typeof productCode === 'string' ? productCode.trim().toUpperCase() : '';
   if (!PRODUCT_CODE.test(normalizedCode)) return json(404, { error: 'Product not found.' });
   const body = await readBody(request);
   if (!isRecord(body) || Object.keys(body).length !== 1 || typeof body.isDeleted !== 'boolean') {
     return json(400, { error: 'Choose a valid Product status action.' });
+  }
+  if (body.isDeleted && !access.actor.rights.includes('delete_product')) {
+    return json(403, { error: 'You do not have permission to perform this Product action.' });
   }
   if (!body.isDeleted && access.actor.role === 'user') {
     return json(403, { error: 'Only Admins and Superadmins can restore products.' });
