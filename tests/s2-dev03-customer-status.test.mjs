@@ -73,14 +73,24 @@ test('Status API accepts only the target transition field', async () => {
 
 test('Soft delete and restore use the route identity and return success without client-supplied status fields', async () => {
   const transitions = [];
-  for (const isDeleted of [true, false]) {
+  for (const [isDeleted, role] of [[true, 'user'], [false, 'admin'], [false, 'superadmin']]) {
     const response = await handleCustomerStatusRequest(request({ isDeleted }), 'c0001', dependencies({
+      getActor: async () => ({ ...actor(), role }),
       updateCustomerStatus: async (...args) => { transitions.push(args); return true; },
     }));
     assert.equal(response.status, 200);
     assert.deepEqual(await response.json(), { saved: true });
   }
-  assert.deepEqual(transitions, [['C0001', true], ['C0001', false]]);
+  assert.deepEqual(transitions, [['C0001', true], ['C0001', false], ['C0001', false]]);
+});
+
+test('Regular Users cannot restore inactive Customers through a direct API request', async () => {
+  let writes = 0;
+  const response = await handleCustomerStatusRequest(request({ isDeleted: false }), 'C0001', dependencies({
+    updateCustomerStatus: async () => { writes += 1; return true; },
+  }));
+  assert.equal(response.status, 403);
+  assert.equal(writes, 0);
 });
 
 test('Active child-record trigger errors map to a safe conflict response', async () => {

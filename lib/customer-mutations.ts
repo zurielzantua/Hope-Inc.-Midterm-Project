@@ -119,6 +119,9 @@ export async function handleCustomerStatusRequest(request: Request, customerNo: 
   if (!isRecord(body) || Object.keys(body).length !== 1 || typeof body.isDeleted !== 'boolean') {
     return json(400, { error: 'Choose a valid Customer status action.' });
   }
+  if (!body.isDeleted && access.actor.role === 'user') {
+    return json(403, { error: 'Only Admins and Superadmins can restore customers.' });
+  }
 
   try {
     if (!await deps.updateCustomerStatus(normalizedNo, body.isDeleted)) {
