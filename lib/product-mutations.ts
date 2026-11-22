@@ -10,6 +10,7 @@ type Dependencies = {
   getActor: () => Promise<ProductMutationActor | null>;
   createProduct: (input: ProductInput) => Promise<void>;
   updateProduct: (productCode: string, input: ProductEditInput, role: string) => Promise<boolean>;
+  updateProductStatus: (productCode: string, isDeleted: boolean) => Promise<boolean>;
 };
 
 const PRODUCT_CODE = /^[A-Z0-9]{6}$/;
@@ -44,7 +45,12 @@ function duplicateProduct(error: unknown) {
   return isRecord(error) && error.code === '23505';
 }
 
-async function authorizedActor(request: Request, requiredRight: 'add_product' | 'edit_product', deps: Dependencies) {
+function blockedByActiveChildren(error: unknown) {
+  return isRecord(error) && error.code === 'P0001' && typeof error.message === 'string' &&
+    /^Cannot delete product row: \d+ active related record\(s\) still exist\.$/.test(error.message);
+}
+
+async function authorizedActor(request: Request, requiredRight: 'add_product' | 'edit_product' | 'delete_product', deps: Dependencies) {
   if (!checkRequestOrigin(request, deps.appOrigin).ok || !isJsonRequest(request)) {
     return { response: json(403, { error: 'Request not allowed.' }) };
   }
@@ -93,5 +99,34 @@ export async function handleUpdateProductRequest(request: Request, productCode: 
   } catch (error) {
     if (duplicateProduct(error)) return json(409, { error: 'The product update conflicts with an existing record.' });
     return json(503, { error: 'Product could not be saved. Try again or contact an administrator.' });
+  }
+}
+
+export async function handleProductStatusRequest(request: Request, productCode: string, deps: Dependencies) {
+  const access = await authorizedActor(request, 'delete_product', deps);
+  if ('response' in access) return access.response;
+  const normalizedCode = typeof productCode === 'string' ? productCode.trim().toUpperCase() : '';
+  if (!PRODUCT_CODE.test(normalizedCode)) return json(404, { error: 'Product not found.' });
+  const body = await readBody(request);
+  if (!isRecord(body) || Object.keys(body).length !== 1 || typeof body.isDeleted !== 'boolean') {
+    return json(400, { error: 'Choose a valid Product status action.' });
+  }
+  if (!body.isDeleted && access.actor.role === 'user') {
+    return json(403, { error: 'Only Admins and Superadmins can restore products.' });
+  }
+
+  try {
+    if (!await deps.updateProductStatus(normalizedCode, body.isDeleted)) {
+      return json(404, { error: 'Product not found or its status has changed. Refresh the list.' });
+    }
+    return json(200, { saved: true });
+  } catch (error) {
+    if (blockedByActiveChildren(error)) {
+      return json(409, {
+        code: 'ACTIVE_DEPENDENTS',
+        message: 'This product has active related records and cannot be deactivated.',
+      });
+    }
+    return json(503, { error: 'Product status could not be changed. Try again or contact an administrator.' });
   }
 }
