@@ -32,25 +32,25 @@ Observed count-based throughput is three task PRs merged on 2026-11-21. This is 
 
 ## Current task status
 
-GitHub shows 3 of 30 issues closed and 27 open. The local tracker separates work that has not yet completed the PR workflow:
+GitHub shows 3 of 30 issues closed and 27 open. Seven task branches are published for owner PR creation; no Sprint 2 task PR is open. The local tracker separates remaining work by state:
 
 | State | Tasks |
 |---|---|
 | Merged / Done | #163, #161, #158 |
 | Awaiting owner PR | #162 |
-| Integration-validated, local only | #150, #157 |
-| Locally committed, PR not merged | #151, #153, #155, #159, #160, #142 |
-| In progress | #148, #152 |
-| Not started by the orchestration tracker | #134, #137, #138, #139, #141, #144, #145, #146, #147, #154, #135, #136, #140, #143, #149, #156 |
+| Pushed, awaiting owner PR | #142, #150, #151, #153, #157, #159, #160 |
+| Integration-validated, local only | #137, #141, #144, #147, #154 |
+| Locally committed, PR not merged | #139, #146, #148, #152, #155 |
+| Not started by the orchestration tracker | #134, #138, #145, #135, #136, #140, #143, #149, #156 |
 
-The six Tester-owned issues—#156, #149, #143, #140, #136, and #135—remain open. The Tester’s actual progress is unknown; no tests are claimed as passed. Local commits and integration-preview results are not counted as completed Sprint 2 issues.
+The six Tester-owned issues—#156, #149, #143, #140, #136, and #135—remain open. The Tester’s actual progress is unknown; no tests are claimed as passed. Pushed branches and integration-preview results are not counted as completed Sprint 2 issues.
 
-At this snapshot, the tracker has 3 Done, 1 Awaiting Owner PR, 6 Local Committed, 2 Integration Validated, 2 In Progress, and 16 Not Started tasks. Ten of the not-started tasks are agent-managed; six belong to the human Tester.
+At this snapshot, the tracker has 3 Done, 1 Awaiting Owner PR, 7 Pushed, 5 Local Committed, 5 Integration Validated, and 9 Not Started tasks. Three of the not-started tasks are agent-managed; six belong to the human Tester.
 
 ## Risks to the day-10 review and Sprint 3 entry
 
 - Twenty-seven issues remain open; only three have task-linked, reviewed, merged PRs.
-- Developer and DB Admin implementations are accumulating locally, but the task branches have not been published for owner PRs and teammate review.
+- Seven issue branches have been published for owner PR creation; they still need owner PRs, teammate reviews, and Scrum Master merges. Other Developer and DB Admin work remains local pending database or PR-diff gates.
 - Customer/Product SQL runtime checks remain unverified because no local PostgreSQL/Supabase runtime is available. Hosted migration and email verification have not been performed.
 - Tester-owned execution and regression results are outstanding or unknown. Do not count these as passed.
 - The sprint calendar start date and story-point estimates are unavailable, so a sprint-day burndown or point-based velocity cannot be calculated from the evidence in hand.
