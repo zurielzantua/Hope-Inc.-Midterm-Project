@@ -230,6 +230,17 @@ test("email is lowercased before Auth and profile persistence", async () => {
   }]);
 });
 
+test("registration accepts Yahoo and institutional email domains", async () => {
+  for (const email of ["person@yahoo.com", "student@university.edu", "student@dept.university.edu.ph"]) {
+    const admin = mockAdmin();
+    const response = await POST(jsonRequest({ firstName: "Alex", lastName: "Rivera", email }), {
+      createAdminClient: () => admin.client,
+    });
+    assert.equal(response.status, 201, email);
+    assert.equal(admin.calls.find(([name]) => name === "createUser")[1].email, email);
+  }
+});
+
 test("duplicate email response does not expose Auth provider details", async () => {
   const admin = mockAdmin({ authResult: { data: { user: null }, error: { code: "email_exists", message: "email exists" } } });
   const response = await POST(jsonRequest({

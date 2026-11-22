@@ -17,7 +17,9 @@ const authModule = uri(`
   });
 `);
 const coreModule = uri(`export const readSetupCompletion = (user, id) => user?.id === id ? user.app_metadata?.hope_first_password_complete ?? null : null;`);
-const helperSource = compile(await readFile(new URL('../lib/auth/user-management.ts', import.meta.url), 'utf8'));
+const originModule = uri(compile(await readFile(new URL('../lib/auth/request-origin.ts', import.meta.url), 'utf8')));
+const helperSource = compile((await readFile(new URL('../lib/auth/user-management.ts', import.meta.url), 'utf8'))
+  .replace("from '@/lib/auth/request-origin'", `from '${originModule}'`));
 const helperModule = uri(helperSource);
 const serverModule = uri(`export const createSupabaseAdminClient = () => globalThis.__userManagementState.admin;`);
 const configModule = uri(`export const getSupabaseConfig = () => ({ url: 'https://hope.example', key: 'sb_publishable_test' });`);

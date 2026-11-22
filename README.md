@@ -89,6 +89,8 @@ npm ci
 cp .env.local.example .env.local
 ```
 
+Each clone or Git worktree needs its own ignored `.env.local`; environment files are not shared between the role folders.
+
 4. Configure Supabase credentials in `.env.local`
 5. Run the development server:
 

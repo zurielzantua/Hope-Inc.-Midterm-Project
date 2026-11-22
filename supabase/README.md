@@ -29,12 +29,17 @@ SQL migrations are stored in `supabase/migrations/`.
 
 ## Environment variables
 
-Create `.env.local` in the project root:
+Copy `.env.local.example` to `.env.local` in the project root and fill its placeholders. Public client configuration uses:
 
 ```dotenv
 NEXT_PUBLIC_SUPABASE_URL=https://xpfojvcfhudwtritpofx.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=<ask the DB Admin or copy from the Supabase dashboard>
 ```
+
+Registration and trusted account-management operations also require
+`SUPABASE_SECRET_KEY`. Ask the DB Admin for it through the team's private
+channel and keep it server-only: do not prefix it with `NEXT_PUBLIC_` and never
+commit the real value or `.env.local`.
 
 ## Running migrations
 
@@ -91,6 +96,16 @@ The trusted server-side password-completion operation must update the Auth
 `app_metadata` marker. The client must then refresh its session/JWT before RLS
 can observe the new value. Service-role operations bypass RLS and therefore do
 not validate these policies; application-side authorization remains required.
+
+## Auth email delivery and callbacks
+
+Both first-password invitations and password-reset links use Supabase Auth email.
+The default hosted SMTP service is limited to project-team recipients and a low
+send rate; configure a custom SMTP provider in Supabase Auth before sending to
+Yahoo, school, or other external addresses. Do not commit SMTP credentials.
+Set `HOPE_APP_URL` to the public application origin and allowlist the
+`/set-password` and `/reset-password` callback URLs in Supabase Auth. Loopback
+URLs in the local `config.toml` work only on the machine running the app.
 
 The script first shows a dry run, then asks for confirmation before pushing.
 

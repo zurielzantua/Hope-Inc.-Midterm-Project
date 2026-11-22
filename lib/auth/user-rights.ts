@@ -1,3 +1,5 @@
+import { checkRequestOrigin, isJsonRequest } from '@/lib/auth/request-origin';
+
 export type UserRight = {
   moduleId: number;
   moduleCode: string;
@@ -17,6 +19,7 @@ export type RightsModule = {
 
 type RightsActor = { userId: string; role: string };
 type RightsDependencies = {
+  appOrigin?: string;
   getActor: () => Promise<RightsActor | null>;
   loadRights: (targetUserId: string) => Promise<unknown>;
   saveRights: (targetUserId: string, rightIds: number[]) => Promise<boolean>;
@@ -55,9 +58,8 @@ function completeRightsCatalog(value: unknown): value is UserRight[] {
   return MODULE_ORDER.every((moduleCode) => value.some((right) => right.moduleCode === moduleCode));
 }
 
-function allowedWrite(request: Request) {
-  if (request.headers.get('origin') !== new URL(request.url).origin) return false;
-  return request.headers.get('content-type')?.split(';', 1)[0].trim().toLowerCase() === 'application/json';
+function allowedWrite(request: Request, appOrigin?: string) {
+  return checkRequestOrigin(request, appOrigin).ok && isJsonRequest(request);
 }
 
 function rpcError(error: unknown) {
@@ -135,7 +137,7 @@ export async function handleReadUserRights(request: Request, deps: RightsDepende
 
 export async function handleSaveUserRights(request: Request, deps: RightsDependencies) {
   try {
-    if (!allowedWrite(request)) return json(403, { error: 'Request not allowed.' });
+    if (!allowedWrite(request, deps.appOrigin)) return json(403, { error: 'Request not allowed.' });
   } catch {
     return json(403, { error: 'Request not allowed.' });
   }

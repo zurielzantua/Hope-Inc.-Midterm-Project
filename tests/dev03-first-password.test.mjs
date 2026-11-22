@@ -6,8 +6,12 @@ import ts from 'typescript';
 const coreSource = await readFile(new URL('../lib/auth/core.ts', import.meta.url), 'utf8');
 const coreOutput = ts.transpileModule(coreSource, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText;
 const coreUrl = `data:text/javascript;base64,${Buffer.from(coreOutput).toString('base64')}`;
+const originSource = await readFile(new URL('../lib/auth/request-origin.ts', import.meta.url), 'utf8');
+const originOutput = ts.transpileModule(originSource, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText;
+const originUrl = `data:text/javascript;base64,${Buffer.from(originOutput).toString('base64')}`;
 const source = (await readFile(new URL('../lib/auth/first-password.ts', import.meta.url), 'utf8'))
-  .replace("from '@/lib/auth/core'", `from '${coreUrl}'`);
+  .replace("from '@/lib/auth/core'", `from '${coreUrl}'`)
+  .replace("from '@/lib/auth/request-origin'", `from '${originUrl}'`);
 const output = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText;
 const { handleIssueFirstPasswordInvite, handleVerifyFirstPasswordInvite, handleFirstPasswordStatus, handleCompleteFirstPassword, isInvalidInviteError } = await import(`data:text/javascript;base64,${Buffer.from(output).toString('base64')}`);
 
@@ -35,6 +39,11 @@ function dependencies(overrides = {}) {
         account: approvedSetupAccount,
       } : overrides.target;
     },
+    recoverStaleSetupClaim: async (id, claimId) => {
+      calls.push(['recoverStaleSetupClaim', id, claimId]);
+      if (overrides.recoverError) throw new Error('private recovery details');
+      return overrides.recoverStaleClaim ?? false;
+    },
     prepareInvitation: async (id, type, expiresAt) => {
       calls.push(['prepareInvitation', id, type, expiresAt]);
       if (overrides.prepareError) throw new Error('private metadata details');
@@ -50,6 +59,13 @@ function dependencies(overrides = {}) {
       calls.push(['verifyInvite', tokenHash, type, invitationId]);
       if (overrides.verifyError) throw new Error('private auth details');
       return overrides.verifiedSession === undefined ? { userId: 'user-1', accessToken: 'setup-access-token', sessionId: 'session-1', expiresAt: 2000000000, type, invitationId } : overrides.verifiedSession;
+    },
+    verifyInviteSession: async (accessToken, refreshToken, invitationId) => {
+      calls.push(['verifyInviteSession', accessToken, refreshToken, invitationId]);
+      if (overrides.sessionVerifyError) throw new Error('private auth details');
+      return overrides.verifiedSession === undefined
+        ? { userId: 'user-1', accessToken, sessionId: 'session-1', expiresAt: 2000000000, type: 'invite', invitationId }
+        : overrides.verifiedSession;
     },
     getSetupSession: async () => {
       calls.push(['getSetupSession']);
@@ -74,10 +90,10 @@ function dependencies(overrides = {}) {
       calls.push(['markSetupSession', id, sessionId, expiresAt, type, invitationId]);
       if (overrides.bindError) throw new Error('private metadata error');
     },
-    setPassword: async (id, password, sessionId, claimId) => {
-      calls.push(['setPassword', id, password, sessionId, claimId]);
-      if (overrides.passwordError) throw new Error('private auth error');
-      return overrides.passwordResult ?? 'success';
+    completeSetup: async (id, password, sessionId, claimId) => {
+      calls.push(['completeSetup', id, password, sessionId, claimId]);
+      if (overrides.completeError) throw new Error('private auth error');
+      return overrides.completeResult ?? 'completed';
     },
     revokeRefreshTokens: async (token) => {
       calls.push(['revokeRefreshTokens', token]);
@@ -87,10 +103,6 @@ function dependencies(overrides = {}) {
       calls.push(['clearLocalSession']);
       if (overrides.clearError) throw new Error('private cookie error');
     },
-    markSetupComplete: async (id, sessionId, claimId) => {
-      calls.push(['markSetupComplete', id, sessionId, claimId]);
-      if (overrides.markError) throw new Error('private metadata error');
-    },
   };
 }
 
@@ -98,8 +110,54 @@ test('trusted Superadmin can issue an invite for an approved existing unconfirme
   const deps = dependencies();
   const response = await handleIssueFirstPasswordInvite(json({ authUserId: targetId }), deps);
   assert.equal(response.status, 202);
-  assert.deepEqual(deps.calls.at(-1), ['sendInvite', 'user@example.test', 'https://hope.example/set-password?setup_invite_id=33333333-3333-4333-8333-333333333333', targetId, 'invite', '33333333-3333-4333-8333-333333333333']);
+  assert.deepEqual(deps.calls.at(-1), ['sendInvite', 'user@example.test', 'https://hope.example/set-password', targetId, 'invite', '33333333-3333-4333-8333-333333333333']);
   assert.doesNotMatch(await response.text(), /user@example\.test|user-1/);
+});
+
+test('a stale completion claim can be recovered before issuing a replacement invite', async () => {
+  const claimedTarget = {
+    authUserId: targetId, email: 'user@example.test', authEmail: 'user@example.test', emailConfirmedAt: null,
+    setupClaimId: 'stale-claim', setupSessionId: 'expired-session',
+    setupSessionExpiresAt: 1793491200, account: approvedSetupAccount,
+  };
+  const deps = dependencies({ target: claimedTarget, recoverStaleClaim: true });
+  let loads = 0;
+  deps.loadTarget = async (id) => {
+    deps.calls.push(['loadTarget', id]);
+    return loads++ === 0 ? claimedTarget : { ...claimedTarget, setupClaimId: null };
+  };
+  const response = await handleIssueFirstPasswordInvite(json({ authUserId: targetId }), deps);
+  assert.equal(response.status, 202);
+  assert.deepEqual(deps.calls.find(([name]) => name === 'recoverStaleSetupClaim'), ['recoverStaleSetupClaim', targetId, 'stale-claim']);
+  assert.ok(deps.calls.findIndex(([name]) => name === 'recoverStaleSetupClaim') < deps.calls.findIndex(([name]) => name === 'prepareInvitation'));
+  assert.ok(deps.calls.some(([name]) => name === 'sendInvite'));
+});
+
+test('a claim that is still in progress cannot be recovered or re-invited', async () => {
+  const deps = dependencies({ target: {
+    authUserId: targetId, email: 'user@example.test', authEmail: 'user@example.test', emailConfirmedAt: null,
+    setupClaimId: 'active-claim', setupSessionId: 'active-session',
+    setupSessionExpiresAt: Math.floor(Date.now() / 1000) + 1800, account: approvedSetupAccount,
+  }, recoveryResult: false });
+  const response = await handleIssueFirstPasswordInvite(json({ authUserId: targetId }), deps);
+  assert.equal(response.status, 409);
+  assert.equal(deps.calls.some(([name]) => name === 'sendInvite'), false);
+});
+
+test('first-password invitations accept Yahoo and institutional email domains', async () => {
+  for (const email of ['person@yahoo.com', 'student@university.edu', 'student@dept.university.edu.ph']) {
+    const deps = dependencies({ target: {
+      authUserId: targetId,
+      email,
+      authEmail: email,
+      emailConfirmedAt: null,
+      setupClaimId: null,
+      account: approvedSetupAccount,
+    } });
+    const response = await handleIssueFirstPasswordInvite(json({ authUserId: targetId }), deps);
+    assert.equal(response.status, 202, email);
+    assert.equal(deps.calls.find(([name]) => name === 'sendInvite')[1], email);
+  }
 });
 
 test('disabled setup and unauthorized issuers cannot send invitations', async () => {
@@ -159,6 +217,30 @@ test('invite delivery and target lookup errors return generic unavailable respon
   assert.equal((await handleIssueFirstPasswordInvite(json({ authUserId: targetId }), target)).status, 503);
 });
 
+test('setup invitations map the Auth email-rate-limit code to the rate-limited response', async () => {
+  const deps = dependencies();
+  deps.sendInvite = async () => {
+    throw Object.assign(new Error('private provider detail'), { code: 'over_email_send_rate_limit' });
+  };
+  const response = await handleIssueFirstPasswordInvite(json({ authUserId: targetId }), deps);
+  assert.equal(response.status, 429);
+  assert.doesNotMatch(await response.text(), /private provider detail/);
+});
+
+test('setup invitations report when the default SMTP provider rejects an external recipient', async () => {
+  const deps = dependencies();
+  deps.sendInvite = async () => {
+    throw Object.assign(new Error('Email address not authorized'), { code: 'email_address_not_authorized' });
+  };
+  const response = await handleIssueFirstPasswordInvite(json({ authUserId: targetId }), deps);
+  assert.equal(response.status, 503);
+  assert.deepEqual(await response.json(), {
+    code: 'smtp_required',
+    error: 'Configure custom SMTP to send setup emails outside the project team.',
+  });
+  assert.ok(deps.calls.some(([name]) => name === 'clearInvitation'));
+});
+
 test('an invitation that returns a different Auth identity is not reported as successful', async () => {
   const deps = dependencies({ invitedId: '22222222-2222-4222-8222-222222222222' });
   const response = await handleIssueFirstPasswordInvite(json({ authUserId: targetId }), deps);
@@ -172,6 +254,50 @@ test('explicit invite verification exposes only a setup-ready result', async () 
   assert.equal(response.status, 200);
   assert.deepEqual(await response.json(), { verified: true });
   assert.deepEqual(deps.calls.slice(-3), [['verifyInvite', 'one-time-hash', 'invite', '33333333-3333-4333-8333-333333333333'], ['lookupAccount', 'user-1'], ['markSetupSession', 'user-1', 'session-1', 2000000000, 'invite', '33333333-3333-4333-8333-333333333333']]);
+});
+
+test('token-hash callback works without an invitation id in the redirect URL', async () => {
+  const invitationId = '33333333-3333-4333-8333-333333333333';
+  const deps = dependencies({ verifiedSession: {
+    userId: 'user-1', accessToken: 'setup-access-token', sessionId: 'session-1',
+    expiresAt: 2000000000, type: 'invite', invitationId,
+  } });
+  const response = await handleVerifyFirstPasswordInvite(json({ tokenHash: 'one-time-hash', type: 'invite' }), deps);
+  assert.equal(response.status, 200);
+  assert.ok(deps.calls.some(([name, id, sessionId, , type, savedId]) => name === 'markSetupSession' && id === 'user-1' && sessionId === 'session-1' && type === 'invite' && savedId === invitationId));
+});
+
+test('default Supabase invite session tokens are accepted only through the stored invitation binding', async () => {
+  const deps = dependencies();
+  const invitationId = '33333333-3333-4333-8333-333333333333';
+  const response = await handleVerifyFirstPasswordInvite(json({
+    accessToken: 'verified-access-token',
+    refreshToken: 'verified-refresh-token',
+    invitationId,
+  }), deps);
+  assert.equal(response.status, 200);
+  const responseText = await response.text();
+  assert.deepEqual(JSON.parse(responseText), { verified: true });
+  assert.deepEqual(deps.calls.slice(-3), [
+    ['verifyInviteSession', 'verified-access-token', 'verified-refresh-token', invitationId],
+    ['lookupAccount', 'user-1'],
+    ['markSetupSession', 'user-1', 'session-1', 2000000000, 'invite', invitationId],
+  ]);
+  assert.doesNotMatch(responseText, /verified-access-token|verified-refresh-token/);
+});
+
+test('default Supabase session callback can derive its invitation binding server-side', async () => {
+  const invitationId = '33333333-3333-4333-8333-333333333333';
+  const deps = dependencies({ verifiedSession: {
+    userId: 'user-1', accessToken: 'verified-access-token', sessionId: 'session-1',
+    expiresAt: 2000000000, type: 'invite', invitationId,
+  } });
+  const response = await handleVerifyFirstPasswordInvite(json({
+    accessToken: 'verified-access-token',
+    refreshToken: 'verified-refresh-token',
+  }), deps);
+  assert.equal(response.status, 200);
+  assert.ok(deps.calls.some(([name, id, sessionId, , type, savedId]) => name === 'markSetupSession' && id === 'user-1' && sessionId === 'session-1' && type === 'invite' && savedId === invitationId));
 });
 
 test('a verified invite session is revoked if its trusted session binding cannot be saved', async () => {
@@ -208,7 +334,7 @@ test('cross-origin verification and password completion are rejected before Auth
   assert.equal(verification.calls.some(([name]) => name === 'verifyInvite'), false);
   const completion = dependencies();
   assert.equal((await handleCompleteFirstPassword(request({ password: 'SecurePass123' }), completion)).status, 403);
-  assert.equal(completion.calls.some(([name]) => name === 'setPassword'), false);
+  assert.equal(completion.calls.some(([name]) => name === 'completeSetup'), false);
 });
 
 test('verification rejects and revokes sessions for accounts that are Pending, blocked, or deleted', async () => {
@@ -231,51 +357,50 @@ test('setup status requires a live eligible setup session', async () => {
   assert.equal((await handleFirstPasswordStatus(dependencies({ account: { ...approvedSetupAccount, is_blocked: true } }))).status, 403);
 });
 
-test('password completion revokes refresh tokens before setting the trusted completion marker', async () => {
+test('password and trusted completion marker are committed through one Auth operation', async () => {
   const deps = dependencies();
   const response = await handleCompleteFirstPassword(json({ password: 'SecurePass123' }), deps);
   assert.equal(response.status, 200);
-  assert.deepEqual(deps.calls.slice(-5), [
+  assert.deepEqual(deps.calls.slice(-3), [
     ['claimSetup', 'user-1', 'session-1'],
-    ['setPassword', 'user-1', 'SecurePass123', 'session-1', '44444444-4444-4444-8444-444444444444'],
-    ['revokeRefreshTokens', 'setup-access-token'],
-    ['markSetupComplete', 'user-1', 'session-1', '44444444-4444-4444-8444-444444444444'],
+    ['completeSetup', 'user-1', 'SecurePass123', 'session-1', '44444444-4444-4444-8444-444444444444'],
     ['clearLocalSession'],
   ]);
+  assert.equal(deps.calls.some(([name]) => name === 'revokeRefreshTokens'), false);
   assert.doesNotMatch(await response.text(), /SecurePass123|setup-access-token/);
 });
 
 test('invalid passwords can be retried while the verified setup session remains active', async () => {
-  const deps = dependencies({ passwordResult: 'invalid' });
+  const deps = dependencies({ completeResult: 'invalid' });
   const response = await handleCompleteFirstPassword(json({ password: 'weak' }), deps);
   assert.equal(response.status, 400);
   assert.ok(deps.calls.some(([name]) => name === 'claimSetup'));
   assert.ok(deps.calls.some(([name]) => name === 'releaseSetupClaim'));
   assert.equal(deps.calls.some(([name]) => name === 'revokeRefreshTokens'), false);
-  assert.equal(deps.calls.some(([name]) => name === 'markSetupComplete'), false);
+  assert.equal(deps.calls.some(([name]) => name === 'clearLocalSession'), false);
 });
 
 test('concurrent completion requests allow only the atomic claim winner to set a password', async () => {
   const deps = dependencies();
   let claimed = false;
-  let passwordCalls = 0;
+  let completionCalls = 0;
   deps.claimSetup = async () => {
     if (claimed) return null;
     claimed = true;
     return '44444444-4444-4444-8444-444444444444';
   };
-  deps.setPassword = async () => { passwordCalls += 1; return 'success'; };
+  deps.completeSetup = async () => { completionCalls += 1; return 'completed'; };
   const [left, right] = await Promise.all([
     handleCompleteFirstPassword(json({ password: 'SecurePass123' }), deps),
     handleCompleteFirstPassword(json({ password: 'SecurePass123' }), deps),
   ]);
   assert.deepEqual([left.status, right.status].sort(), [200, 409]);
-  assert.equal(passwordCalls, 1);
+  assert.equal(completionCalls, 1);
 });
 
-test('a failed Auth password update releases only its own claim for a valid retry', async () => {
-  const deps = dependencies({ passwordResult: 'invalid' });
-  assert.equal((await handleCompleteFirstPassword(json({ password: 'weak' }), deps)).status, 400);
+test('a definitive Auth rejection releases only its own claim for a valid retry', async () => {
+  const deps = dependencies({ completeResult: 'rejected' });
+  assert.equal((await handleCompleteFirstPassword(json({ password: 'SecurePass123' }), deps)).status, 503);
   assert.ok(deps.calls.some(([name, , claimId]) => name === 'releaseSetupClaim' && claimId === '44444444-4444-4444-8444-444444444444'));
 });
 
@@ -292,21 +417,13 @@ test('completion fails closed for missing sessions and ineligible accounts', asy
   }
 });
 
-test('completion does not mark setup complete when password setting or session revocation fails', async () => {
-  const passwordFailure = dependencies({ passwordError: true });
-  assert.equal((await handleCompleteFirstPassword(json({ password: 'SecurePass123' }), passwordFailure)).status, 503);
-  assert.equal(passwordFailure.calls.some(([name]) => name === 'markSetupComplete'), false);
-  const revokeFailure = dependencies({ revokeError: true });
-  assert.equal((await handleCompleteFirstPassword(json({ password: 'SecurePass123' }), revokeFailure)).status, 503);
-  assert.equal(revokeFailure.calls.some(([name]) => name === 'markSetupComplete'), false);
-});
-
-test('metadata update failure after revocation never reports setup success', async () => {
-  const deps = dependencies({ markError: true });
-  const response = await handleCompleteFirstPassword(json({ password: 'SecurePass123' }), deps);
+test('an ambiguous Auth completion failure retains the claim for stale-session recovery', async () => {
+  const passwordFailure = dependencies({ completeError: true });
+  const response = await handleCompleteFirstPassword(json({ password: 'SecurePass123' }), passwordFailure);
   assert.equal(response.status, 503);
-  assert.ok(deps.calls.some(([name]) => name === 'revokeRefreshTokens'));
-  assert.doesNotMatch(await response.text(), /private metadata error|SecurePass123/);
+  assert.equal(passwordFailure.calls.some(([name]) => name === 'releaseSetupClaim'), false);
+  assert.equal(passwordFailure.calls.some(([name]) => name === 'clearLocalSession'), false);
+  assert.doesNotMatch(await response.text(), /private auth error|SecurePass123/);
 });
 
 test('malformed requests and unexpected database failures return controlled responses', async () => {

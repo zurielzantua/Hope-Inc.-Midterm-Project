@@ -15,6 +15,11 @@ const { passwordResetDependencies } = await import(uri(compile(source)));
 function setup(overrides = {}) {
   const state = { calls: [], user: { id: 'auth-user-1' } };
   state.sessionClient = { auth: {
+    setSession: async (tokens) => {
+      state.calls.push(['setSession', tokens]);
+      const session = { access_token: tokens.access_token, refresh_token: tokens.refresh_token, user: state.user };
+      return overrides.setSessionResult ?? { data: { session, user: state.user }, error: null };
+    },
     verifyOtp: async (input) => {
       state.calls.push(['verifyOtp', input]);
       return overrides.verifyResult ?? { data: { session: { access_token: 'access', refresh_token: 'refresh' }, user: state.user }, error: null };
@@ -22,6 +27,10 @@ function setup(overrides = {}) {
     getUser: async () => {
       state.calls.push(['getUser']);
       return overrides.userResult ?? { data: { user: state.user }, error: null };
+    },
+    getClaims: async (token) => {
+      state.calls.push(['getClaims', token]);
+      return overrides.claimsResult ?? { data: { claims: { sub: state.user.id } }, error: null };
     },
     updateUser: async (input) => {
       state.calls.push(['updateUser', input]);
@@ -64,6 +73,17 @@ test('verification redeems only a recovery token and confirms its authenticated 
   assert.deepEqual(missingIdentity.calls.at(-1), ['signOut', { scope: 'local' }]);
 });
 
+test('default recovery confirmation session is verified before use', async () => {
+  const state = setup();
+  assert.equal(await passwordResetDependencies().verifyRecoverySession('recovery-access-token', 'recovery-refresh-token'), true);
+  assert.deepEqual(state.calls, [
+    ['createSessionClient', true],
+    ['setSession', { access_token: 'recovery-access-token', refresh_token: 'recovery-refresh-token' }],
+    ['getUser'],
+    ['getClaims', 'recovery-access-token'],
+  ]);
+});
+
 test('completion checks the signed-in identity, updates through Auth, and clears the local session', async () => {
   const state = setup();
   assert.deepEqual(await passwordResetDependencies().completeReset('ValidPassword1'), { updated: true, signedOut: true });
@@ -78,4 +98,16 @@ test('completion checks the signed-in identity, updates through Auth, and clears
   assert.equal(weak.calls.some(([name]) => name === 'signOut'), false);
   const noSession = setup({ userResult: { data: { user: null }, error: null } });
   assert.deepEqual(await passwordResetDependencies().completeReset('ValidPassword1'), { updated: false, reason: 'unauthenticated' });
+});
+
+test('a session already revoked by the password update counts as signed out', async () => {
+  const state = setup({ signOutResult: { error: { code: 'session_not_found', status: 403 } } });
+  assert.deepEqual(await passwordResetDependencies().completeReset('ValidPassword1'), { updated: true, signedOut: true });
+
+  const thrown = setup();
+  thrown.sessionClient.auth.signOut = async () => { throw { code: 'session_not_found', status: 403 }; };
+  assert.deepEqual(await passwordResetDependencies().completeReset('ValidPassword1'), { updated: true, signedOut: true });
+
+  const failed = setup({ signOutResult: { error: { code: 'server_error', status: 500 } } });
+  assert.deepEqual(await passwordResetDependencies().completeReset('ValidPassword1'), { updated: true, signedOut: false });
 });

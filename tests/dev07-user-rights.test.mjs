@@ -3,7 +3,13 @@ import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import ts from 'typescript';
 
-const source = await readFile(new URL('../lib/auth/user-rights.ts', import.meta.url), 'utf8');
+const originSource = await readFile(new URL('../lib/auth/request-origin.ts', import.meta.url), 'utf8');
+const originOutput = ts.transpileModule(originSource, {
+  compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
+}).outputText;
+const originUrl = `data:text/javascript;base64,${Buffer.from(originOutput).toString('base64')}`;
+const source = (await readFile(new URL('../lib/auth/user-rights.ts', import.meta.url), 'utf8'))
+  .replace("from '@/lib/auth/request-origin'", `from '${originUrl}'`);
 const output = ts.transpileModule(source, {
   compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
 }).outputText;
@@ -106,6 +112,17 @@ test('invalid target IDs, forged actor fields, duplicate rights, and cross-origi
     dependencies(),
   );
   assert.equal(crossOrigin.status, 403);
+});
+
+test('rights updates accept localhost and 127.0.0.1 origin aliases in development', async (t) => {
+  const previous = process.env.NODE_ENV;
+  process.env.NODE_ENV = 'development';
+  t.after(() => { if (previous === undefined) delete process.env.NODE_ENV; else process.env.NODE_ENV = previous; });
+  const response = await handleSaveUserRights(
+    request('PATCH', { userId: targetId, rightIds: [1] }, 'http://127.0.0.1:3000/api/user-management/rights', 'http://localhost:3000'),
+    dependencies(),
+  );
+  assert.equal(response.status, 200);
 });
 
 test('a missing rights RPC fails closed without leaking database details', async () => {

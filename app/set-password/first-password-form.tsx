@@ -3,10 +3,12 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 
 type Stage = 'loading' | 'verify' | 'password' | 'invalid' | 'success';
+type SessionTokens = { accessToken: string; refreshToken: string };
 
 export function FirstPasswordForm() {
   const [stage, setStage] = useState<Stage>('loading');
   const [tokenHash, setTokenHash] = useState('');
+  const [sessionTokens, setSessionTokens] = useState<SessionTokens | null>(null);
   const [invitationType, setInvitationType] = useState<'invite' | 'magiclink'>('invite');
   const [invitationId, setInvitationId] = useState('');
   const [busy, setBusy] = useState(false);
@@ -16,17 +18,37 @@ export function FirstPasswordForm() {
   useEffect(() => {
     if (initialized.current) return;
     initialized.current = true;
-    const fragment = new URLSearchParams(window.location.hash.slice(1));
+    const url = new URL(window.location.href);
+    const fragment = new URLSearchParams(url.hash.slice(1));
     const token = fragment.get('token_hash');
     const type = fragment.get('type');
-    const id = new URLSearchParams(window.location.search).get('setup_invite_id');
-    window.history.replaceState(null, '', window.location.pathname);
+    const accessToken = fragment.get('access_token');
+    const refreshToken = fragment.get('refresh_token');
+    const id = url.searchParams.get('setup_invite_id');
+    const authError = fragment.has('error') || fragment.has('error_code') || url.searchParams.has('error') || url.searchParams.has('error_code');
+    window.history.replaceState(null, '', url.pathname);
 
-    if (token && id && (type === 'invite' || type === 'magiclink')) {
+    if (authError) {
+      setMessage('This invitation is invalid or expired. Contact an administrator for a new link.');
+      setStage('invalid');
+      return;
+    }
+    if (token && (type === 'invite' || type === 'magiclink')) {
       setTokenHash(token);
-      setInvitationId(id);
+      setInvitationId(id ?? '');
       setInvitationType(type);
       setStage('verify');
+      return;
+    }
+    if (accessToken && refreshToken) {
+      setSessionTokens({ accessToken, refreshToken });
+      setInvitationId(id ?? '');
+      setStage('verify');
+      return;
+    }
+    if (token || accessToken || refreshToken || id) {
+      setMessage('This invitation is invalid or expired. Contact an administrator for a new link.');
+      setStage('invalid');
       return;
     }
 
@@ -47,19 +69,23 @@ export function FirstPasswordForm() {
   }, []);
 
   async function verifyInvitation() {
-    if (busy || !tokenHash) return;
+    if (busy || (!tokenHash && !sessionTokens)) return;
     setBusy(true);
     setMessage('');
     try {
       const response = await fetch('/api/auth/first-password/verify', {
         method: 'POST', headers: { 'content-type': 'application/json' }, cache: 'no-store',
-        body: JSON.stringify({ tokenHash, type: invitationType, invitationId }),
+        body: JSON.stringify(sessionTokens
+          ? { ...sessionTokens, ...(invitationId ? { invitationId } : {}) }
+          : { tokenHash, type: invitationType, ...(invitationId ? { invitationId } : {}) }),
       });
       if (response.ok) {
         setTokenHash('');
+        setSessionTokens(null);
         setStage('password');
       } else if (response.status === 400 || response.status === 403) {
         setTokenHash('');
+        setSessionTokens(null);
         setMessage('This invitation is invalid, expired, or unavailable for this account. Contact an administrator.');
         setStage('invalid');
       } else setMessage('First-password setup is temporarily unavailable. Please try again later.');
@@ -87,6 +113,10 @@ export function FirstPasswordForm() {
       });
       if (response.ok) setStage('success');
       else if (response.status === 400) setMessage('The password does not meet the current password requirements.');
+      else if (response.status === 409) {
+        setMessage('Password setup is already in progress or needs administrator review. Contact an administrator.');
+        setStage('invalid');
+      }
       else if (response.status === 401 || response.status === 403) {
         setMessage('This setup session is no longer available. Contact an administrator.');
         setStage('invalid');

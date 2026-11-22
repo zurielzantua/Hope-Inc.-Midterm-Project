@@ -3,7 +3,11 @@ import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import ts from 'typescript';
 
-const source = await readFile(new URL('../lib/auth/password-reset.ts', import.meta.url), 'utf8');
+const originSource = await readFile(new URL('../lib/auth/request-origin.ts', import.meta.url), 'utf8');
+const originOutput = ts.transpileModule(originSource, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText;
+const originUrl = `data:text/javascript;base64,${Buffer.from(originOutput).toString('base64')}`;
+const source = (await readFile(new URL('../lib/auth/password-reset.ts', import.meta.url), 'utf8'))
+  .replace("from '@/lib/auth/request-origin'", `from '${originUrl}'`);
 const output = ts.transpileModule(source, {
   compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
 }).outputText;
@@ -30,6 +34,11 @@ function dependencies(overrides = {}) {
       if (overrides.verifyError) throw overrides.verifyError;
       return overrides.verified ?? true;
     },
+    verifyRecoverySession: async (accessToken, refreshToken) => {
+      calls.push(['verifyRecoverySession', accessToken, refreshToken]);
+      if (overrides.sessionVerifyError) throw overrides.sessionVerifyError;
+      return overrides.sessionVerified ?? true;
+    },
     getRecoveryUser: async () => {
       calls.push(['getRecoveryUser']);
       if (overrides.statusError) throw overrides.statusError;
@@ -51,6 +60,15 @@ test('valid reset request is normalized and uses the fixed application callback'
   assert.deepEqual(await response.json(), { status: 'sent' });
 });
 
+test('reset requests accept Yahoo and institutional email domains', async () => {
+  for (const email of ['person@yahoo.com', 'student@university.edu', 'student@dept.university.edu.ph']) {
+    const deps = dependencies();
+    const response = await handlePasswordResetRequest(post('/api/auth/password-reset/request', { email }), deps);
+    assert.equal(response.status, 202, email);
+    assert.equal(deps.calls[0][1], email);
+  }
+});
+
 test('invalid, malformed, and unexpected reset request fields are rejected', async () => {
   for (const body of [null, {}, { email: 'bad-email' }, { email: 'x'.repeat(321) }, { email: 'user@example.test', role: 'admin' }]) {
     const response = await handlePasswordResetRequest(post('/api/auth/password-reset/request', body), dependencies());
@@ -68,9 +86,38 @@ test('reset requests are same-origin and require JSON', async () => {
   assert.equal((await handlePasswordResetRequest(form, dependencies())).status, 403);
 });
 
+test('reset request accepts localhost and 127.0.0.1 origin aliases in development', async (t) => {
+  const previous = process.env.NODE_ENV;
+  process.env.NODE_ENV = 'development';
+  t.after(() => { if (previous === undefined) delete process.env.NODE_ENV; else process.env.NODE_ENV = previous; });
+  const deps = dependencies();
+  deps.appOrigin = 'http://127.0.0.1:3000';
+  const request = new Request('http://127.0.0.1:3000/api/auth/password-reset/request', {
+    method: 'POST',
+    headers: { origin: 'http://localhost:3000', 'content-type': 'application/json' },
+    body: JSON.stringify({ email: 'user@example.test' }),
+  });
+  const response = await handlePasswordResetRequest(request, deps);
+  assert.equal(response.status, 202);
+  assert.equal(deps.calls[0][2], 'http://127.0.0.1:3000/reset-password');
+});
+
 test('unknown accounts receive the same non-enumerating response as valid requests', async () => {
   const deps = dependencies({ requestError: { code: 'user_not_found', status: 404 } });
   const response = await handlePasswordResetRequest(post('/api/auth/password-reset/request', { email: 'unknown@example.test' }), deps);
+  assert.equal(response.status, 202);
+  assert.deepEqual(await response.json(), { status: 'sent' });
+});
+
+test('SMTP recipient restrictions use the same non-enumerating reset response', async () => {
+  const providerError = Object.assign(new Error('Email address not authorized'), {
+    code: 'email_address_not_authorized',
+    status: 403,
+  });
+  const response = await handlePasswordResetRequest(
+    post('/api/auth/password-reset/request', { email: 'person@yahoo.com' }),
+    dependencies({ requestError: providerError }),
+  );
   assert.equal(response.status, 202);
   assert.deepEqual(await response.json(), { status: 'sent' });
 });
@@ -90,6 +137,17 @@ test('recovery verification fixes the token type and rejects invalid, expired, o
   assert.equal(expired.status, 400);
   assert.match(await expired.text(), /invalid, expired, or already used/);
   assert.equal((await handleVerifyPasswordReset(post('/api/auth/password-reset/verify', { tokenHash: 'opaque-token-hash' }), dependencies({ verified: false }))).status, 400);
+});
+
+test('default Supabase recovery session tokens can establish a reset session', async () => {
+  const deps = dependencies();
+  const response = await handleVerifyPasswordReset(post('/api/auth/password-reset/verify', {
+    accessToken: 'recovery-access-token',
+    refreshToken: 'recovery-refresh-token',
+  }), deps);
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { status: 'verified' });
+  assert.deepEqual(deps.calls, [['verifyRecoverySession', 'recovery-access-token', 'recovery-refresh-token']]);
 });
 
 test('recovery verification validates input and fails closed on provider errors', async () => {

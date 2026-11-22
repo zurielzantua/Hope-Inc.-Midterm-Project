@@ -10,6 +10,8 @@ type InviteTarget = {
   authEmail: string | null;
   emailConfirmedAt: string | null;
   setupClaimId: string | null;
+  setupSessionId: string | null;
+  setupSessionExpiresAt: number | null;
   account: Account;
 };
 
@@ -18,19 +20,20 @@ type Dependencies = {
   appOrigin: string | undefined;
   authorizeIssuer: () => Promise<{ allowed: boolean; role?: string }>;
   loadTarget: (userId: string) => Promise<InviteTarget | null>;
+  recoverStaleSetupClaim: (userId: string, claimId: string) => Promise<boolean>;
   prepareInvitation: (userId: string, type: 'invite' | 'magiclink', expiresAt: number) => Promise<string>;
   sendInvite: (email: string, redirectTo: string, userId: string, type: 'invite' | 'magiclink', invitationId: string) => Promise<string | null>;
   clearInvitation: (userId: string, invitationId: string) => Promise<void>;
-  verifyInvite: (tokenHash: string, type: 'invite' | 'magiclink', invitationId: string) => Promise<VerifiedInvite | null>;
+  verifyInvite: (tokenHash: string, type: 'invite' | 'magiclink', invitationId?: string) => Promise<VerifiedInvite | null>;
+  verifyInviteSession: (accessToken: string, refreshToken: string, invitationId?: string) => Promise<VerifiedInvite | null>;
   getSetupSession: () => Promise<SetupSession | null>;
   lookupAccount: (userId: string) => Promise<Account>;
   markSetupSession: (userId: string, sessionId: string, expiresAt: number, type: 'invite' | 'magiclink', invitationId: string) => Promise<void>;
   claimSetup: (userId: string, sessionId: string) => Promise<string | null>;
   releaseSetupClaim: (userId: string, claimId: string) => Promise<void>;
-  setPassword: (userId: string, password: string, sessionId: string, claimId: string) => Promise<'success' | 'invalid'>;
+  completeSetup: (userId: string, password: string, sessionId: string, claimId: string) => Promise<'completed' | 'invalid' | 'rejected'>;
   revokeRefreshTokens: (accessToken: string) => Promise<void>;
   clearLocalSession: () => Promise<void>;
-  markSetupComplete: (userId: string, sessionId: string, claimId: string) => Promise<void>;
 };
 
 const json = (status: number, body: Record<string, unknown>) => Response.json(body, {
@@ -43,6 +46,7 @@ const disabled = () => json(503, { code: 'setup_disabled', error: 'First-passwor
 const misconfigured = () => json(503, { code: 'setup_misconfigured', error: 'First-password setup has an invalid app URL configuration.' });
 const originRejected = () => json(403, { code: 'origin_rejected', error: 'Request not allowed.' });
 const emailFailed = () => json(503, { code: 'email_delivery_failed', error: 'The setup email could not be delivered.' });
+const smtpRequired = () => json(503, { code: 'smtp_required', error: 'Configure custom SMTP to send setup emails outside the project team.' });
 const forbidden = () => json(403, { code: 'invite_ineligible', error: 'This account is not eligible for first-password setup.' });
 const conflict = () => json(409, { code: 'invite_ineligible', error: 'This account is not eligible for first-password setup.' });
 const signInRequired = () => json(401, { code: 'sign_in_required', error: 'Sign in is required.' });
@@ -60,6 +64,12 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+function isExternalRecipientDenied(error: unknown) {
+  if (!isRecord(error)) return false;
+  return error.code === 'email_address_not_authorized' ||
+    (typeof error.message === 'string' && /email address not authorized/i.test(error.message));
+}
+
 function preparePost(request: Request, deps: Dependencies): { response: Response } | { redirectTo: string } {
   if (!deps.enabled) return { response: disabled() };
   const resolution = resolveRedirect(request, deps.appOrigin, '/set-password');
@@ -70,6 +80,10 @@ function preparePost(request: Request, deps: Dependencies): { response: Response
 
 export function isInvalidInviteError(error: unknown) {
   return isRecord(error) && ['otp_expired', 'invite_not_found', 'validation_failed'].includes(String(error.code));
+}
+
+function isRateLimitError(error: unknown) {
+  return isRecord(error) && (error.status === 429 || error.code === 'over_email_send_rate_limit');
 }
 
 export async function handleIssueFirstPasswordInvite(request: Request, deps: Dependencies) {
@@ -95,19 +109,31 @@ export async function handleIssueFirstPasswordInvite(request: Request, deps: Dep
   if (
     target.authUserId.toLowerCase() !== authUserId ||
     !target.email || target.email.trim().toLowerCase() !== target.authEmail?.trim().toLowerCase() ||
-    target.setupClaimId !== null ||
     accountDecision(target.account) !== 'setup-required'
   ) return conflict();
+
+  if (target.setupClaimId !== null) {
+    let recovered: boolean;
+    try { recovered = await deps.recoverStaleSetupClaim(authUserId, target.setupClaimId); } catch { return unavailable(); }
+    if (!recovered) return conflict();
+    try { target = await deps.loadTarget(authUserId); } catch { return unavailable(); }
+    if (!target) return accountNotFound();
+    if (
+      target.authUserId.toLowerCase() !== authUserId ||
+      !target.email || target.email.trim().toLowerCase() !== target.authEmail?.trim().toLowerCase() ||
+      target.setupClaimId !== null ||
+      accountDecision(target.account) !== 'setup-required'
+    ) return conflict();
+  }
 
   const type = target.emailConfirmedAt === null ? 'invite' : 'magiclink';
   const expiresAt = Math.floor(Date.now() / 1000) + 3600;
   let invitationId: string;
   try { invitationId = await deps.prepareInvitation(authUserId, type, expiresAt); } catch { return unavailable(); }
-  const invitationUrl = new URL(redirectTo);
-  invitationUrl.searchParams.set('setup_invite_id', invitationId);
 
+  // Keep the ID in trusted Auth metadata so the redirect uses the allowlisted path exactly.
   try {
-    const invitedId = await deps.sendInvite(target.email, invitationUrl.toString(), authUserId, type, invitationId);
+    const invitedId = await deps.sendInvite(target.email, redirectTo, authUserId, type, invitationId);
     if (!invitedId || invitedId.toLowerCase() !== target.authUserId.toLowerCase()) {
       await deps.clearInvitation(authUserId, invitationId).catch(() => {});
       return unavailable();
@@ -115,7 +141,8 @@ export async function handleIssueFirstPasswordInvite(request: Request, deps: Dep
     return json(202, { sent: true });
   } catch (error) {
     await deps.clearInvitation(authUserId, invitationId).catch(() => {});
-    if (isRecord(error) && error.status === 429) return rateLimited();
+    if (isRateLimitError(error)) return rateLimited();
+    if (isExternalRecipientDenied(error)) return smtpRequired();
     return emailFailed();
   }
 }
@@ -133,21 +160,37 @@ function accountResponse(account: Account) {
 }
 
 export async function handleVerifyFirstPasswordInvite(request: Request, deps: Dependencies) {
-  if (!deps.enabled) return unavailable();
-  const redirectTo = setupRedirect(deps.appOrigin);
-  if (!redirectTo) return unavailable();
-  if (!allowedPost(request, redirectTo)) return json(403, { error: 'Request not allowed.' });
+  const prepared = preparePost(request, deps);
+  if ('response' in prepared) return prepared.response;
   let body: unknown;
   try { body = await request.json(); } catch { return json(400, { error: 'The invitation link is invalid or expired.' }); }
-  if (!isRecord(body) || Object.keys(body).length !== 3 || typeof body.tokenHash !== 'string' || !body.tokenHash || body.tokenHash.length > 512 || body.tokenHash.trim() !== body.tokenHash || !['invite', 'magiclink'].includes(String(body.type)) || typeof body.invitationId !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(body.invitationId)) {
+  if (!isRecord(body)) {
     return json(400, { error: 'The invitation link is invalid or expired.' });
   }
 
+  const fields = Object.keys(body);
+  const hasInvitationId = fields.includes('invitationId');
+  const invitationId = body.invitationId;
+  if (hasInvitationId && (typeof invitationId !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(invitationId))) {
+    return json(400, { error: 'The invitation link is invalid or expired.' });
+  }
+  const credentialFields = fields.filter((field) => field !== 'invitationId');
   let session: VerifiedInvite | null;
-  const type = body.type as 'invite' | 'magiclink';
-  try { session = await deps.verifyInvite(body.tokenHash, type, body.invitationId); } catch { return unavailable(); }
+  let expectedType: 'invite' | 'magiclink' | undefined;
+  if (credentialFields.length === 2 && credentialFields.includes('tokenHash') && credentialFields.includes('type') &&
+      typeof body.tokenHash === 'string' && !!body.tokenHash && body.tokenHash.length <= 512 && body.tokenHash.trim() === body.tokenHash &&
+      ['invite', 'magiclink'].includes(String(body.type))) {
+    expectedType = body.type as 'invite' | 'magiclink';
+    try { session = await deps.verifyInvite(body.tokenHash, expectedType, invitationId as string | undefined); } catch { return unavailable(); }
+  } else if (credentialFields.length === 2 && credentialFields.includes('accessToken') && credentialFields.includes('refreshToken') &&
+      typeof body.accessToken === 'string' && !!body.accessToken && body.accessToken.length <= 8192 && body.accessToken.trim() === body.accessToken &&
+      typeof body.refreshToken === 'string' && !!body.refreshToken && body.refreshToken.length <= 2048 && body.refreshToken.trim() === body.refreshToken) {
+    try { session = await deps.verifyInviteSession(body.accessToken, body.refreshToken, invitationId as string | undefined); } catch { return unavailable(); }
+  } else {
+    return json(400, { error: 'The invitation link is invalid or expired.' });
+  }
   if (!session) return json(400, { error: 'The invitation link is invalid or expired.' });
-  if (session.type !== type || session.invitationId !== body.invitationId) {
+  if ((expectedType && session.type !== expectedType) || (invitationId && session.invitationId !== invitationId)) {
     await revokeSetupSession(session, deps);
     return json(400, { error: 'The invitation link is invalid or expired.' });
   }
@@ -180,10 +223,8 @@ export async function handleFirstPasswordStatus(deps: Dependencies) {
 }
 
 export async function handleCompleteFirstPassword(request: Request, deps: Dependencies) {
-  if (!deps.enabled) return unavailable();
-  const redirectTo = setupRedirect(deps.appOrigin);
-  if (!redirectTo) return unavailable();
-  if (!allowedPost(request, redirectTo)) return json(403, { error: 'Request not allowed.' });
+  const prepared = preparePost(request, deps);
+  if ('response' in prepared) return prepared.response;
   let body: unknown;
   try { body = await request.json(); } catch { return json(400, { error: 'Enter a valid password.' }); }
   if (!isRecord(body) || Object.keys(body).length !== 1 || typeof body.password !== 'string' || !body.password || body.password.length > 1024) {
@@ -191,7 +232,7 @@ export async function handleCompleteFirstPassword(request: Request, deps: Depend
   }
 
   let session: SetupSession | null;
-  try { session = await deps.getSetupSession(); } catch { return unavailable(); }
+  try { session = await deps.getSetupSession(); } catch { console.error('First-password completion failed: session lookup'); return unavailable(); }
   if (!session) return json(401, { error: 'Verify your invitation link to continue.' });
 
   try {
@@ -201,26 +242,22 @@ export async function handleCompleteFirstPassword(request: Request, deps: Depend
       return denied;
     }
   } catch {
+    console.error('First-password completion failed: account lookup');
     return unavailable();
   }
 
   let claimId: string | null;
-  try { claimId = await deps.claimSetup(session.userId, session.sessionId); } catch { return unavailable(); }
+  try { claimId = await deps.claimSetup(session.userId, session.sessionId); } catch { console.error('First-password completion failed: claim'); return unavailable(); }
   if (!claimId) return json(409, { error: 'Password setup is already in progress or needs administrator review.' });
 
-  try {
-    if (await deps.setPassword(session.userId, body.password, session.sessionId, claimId) === 'invalid') {
-      try { await deps.releaseSetupClaim(session.userId, claimId); } catch { return unavailable(); }
-      return json(400, { error: 'The password does not meet the current Auth requirements.' });
-    }
-    await deps.revokeRefreshTokens(session.accessToken);
-  } catch {
-    return unavailable();
-  }
+  let completion: 'completed' | 'invalid' | 'rejected';
+  try { completion = await deps.completeSetup(session.userId, body.password, session.sessionId, claimId); }
+  catch { console.error('First-password completion failed: atomic Auth update'); return unavailable(); }
 
-  try {
-    await deps.markSetupComplete(session.userId, session.sessionId, claimId);
-  } catch {
+  if (completion !== 'completed') {
+    try { await deps.releaseSetupClaim(session.userId, claimId); }
+    catch { console.error('First-password completion failed: claim release'); return unavailable(); }
+    if (completion === 'invalid') return json(400, { error: 'The password does not meet the current Auth requirements.' });
     return unavailable();
   }
 
