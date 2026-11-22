@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>HOPE ERP — UIX-05 Interactive Review Prototype</title>
+  <style>
+    :root {
+      --navy:#163341; --teal:#0b6e75; --bronze:#c28c58; --cloud:#f4f7f8;
+      --surface:#fff; --ink:#1a2b35; --muted:#60757f; --line:#dae4e6;
+      --success:#237856; --warning:#a66b16; --error:#b43f49;
+      font-family:Aptos,"Segoe UI","Helvetica Neue",sans-serif;color:var(--ink);background:var(--cloud)
+    }
+    *{box-sizing:border-box} body{margin:0;background:var(--cloud)} button,input,select{font:inherit}
+    button{cursor:pointer} button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid #a7d5d7;outline-offset:2px}
+    .topbar{height:66px;display:flex;align-items:center;justify-content:space-between;padding:0 28px;color:#fff;background:var(--navy);border-bottom:3px solid var(--bronze)}
+    .brand{display:flex;align-items:center;gap:11px}.mark{width:36px;height:36px;display:grid;place-items:center;color:var(--bronze);border:1px solid var(--bronze);border-radius:8px;font-weight:700}
+    .brand strong{display:block;font-size:14px;letter-spacing:.02em}.brand small{display:block;margin-top:2px;color:#cbd7da;font-size:11px}
+    .identity{display:flex;align-items:center;gap:8px;font-size:12px}.identity select{padding:7px 10px;color:var(--navy);background:#fff;border:1px solid #cad7da;border-radius:5px}
+    .shell{min-height:calc(100vh - 66px);display:grid;grid-template-columns:220px minmax(0,1fr)}
+    .side{display:flex;flex-direction:column;gap:7px;padding:24px 14px;background:#fff;border-right:1px solid var(--line)}
+    .side-title{padding:0 10px 11px;color:var(--navy);font-size:16px;font-weight:700}
+    .nav{padding:11px 12px;color:var(--muted);background:transparent;border:0;border-radius:5px;text-align:left;font-size:13px}
+    .nav[aria-current="page"]{color:var(--navy);background:#e6f0f1;border-left:3px solid var(--teal);font-weight:700}
+    .side-note{margin-top:auto;padding:14px 10px 0;color:var(--muted);border-top:1px solid var(--line);font-size:10px;line-height:1.45}
+    main{min-width:0;padding:24px 28px 36px}
+    .crumb{color:var(--muted);font-size:11px}.crumb strong{color:var(--teal);font-weight:700}
+    h1{margin:8px 0 4px;color:var(--navy);font-size:27px;line-height:1.2}.subhead{margin:0;color:var(--muted);font-size:13px}
+    .notice{margin-top:14px;padding:10px 13px;color:#155c41;background:#e8f4ee;border:1px solid #b6d9c7;border-radius:5px;font-size:12px}
+    .alert{margin-top:12px;padding:10px 12px;color:#7e3038;background:#fbefef;border:1px solid #e8bfc2;border-left:3px solid var(--error);border-radius:4px;font-size:12px;line-height:1.4}
+    .toolbar{display:flex;align-items:end;gap:12px;flex-wrap:wrap;margin-top:18px;padding:14px;background:#fff;border:1px solid var(--line);border-radius:6px}
+    .field{display:grid;gap:5px;min-width:160px}.field label{color:var(--ink);font-size:11px;font-weight:700}.field input,.field select{height:36px;padding:7px 10px;color:var(--ink);background:#fff;border:1px solid #c6d5d8;border-radius:4px;font-size:12px}
+    .field.search{flex:1;min-width:240px}.filter-note{align-self:center;color:var(--muted);font-size:11px}
+    .btn{min-height:34px;padding:8px 12px;color:var(--navy);background:#fff;border:1px solid var(--line);border-radius:4px;font-size:12px;font-weight:700}
+    .btn.primary{color:#fff;background:var(--teal);border-color:var(--teal)}.btn.danger{color:#fff;background:var(--error);border-color:var(--error)}.btn.link{padding:2px;color:var(--teal);background:none;border:0;text-decoration:underline}
+    .table-wrap{margin-top:14px;overflow:auto;background:#fff;border:1px solid var(--line);border-radius:6px}
+    table{width:100%;border-collapse:collapse;font-size:12px}th{padding:11px 12px;color:var(--muted);background:#f7f9f9;border-bottom:1px solid var(--line);text-align:left;font-size:10px;letter-spacing:.04em;text-transform:uppercase;white-space:nowrap}
+    td{padding:12px;border-bottom:1px solid var(--line);vertical-align:middle}tr:last-child td{border-bottom:0}.inactive{background:#edf2f3;color:var(--muted)}
+    .badge{display:inline-block;padding:4px 8px;color:var(--success);background:#e8f4ee;border-radius:999px;font-size:10px;font-weight:700}.badge.inactive{color:#60757f;background:#e2eaec}
+    .actions{display:flex;align-items:center;gap:9px;white-space:nowrap}.actions button{padding:2px;color:var(--teal);background:none;border:0;text-decoration:underline;font-size:11px;font-weight:700}.actions button.delete{color:var(--error)}.actions button.restore{color:var(--success)}
+    .panel{margin-top:14px;padding:18px;background:#fff;border:1px solid var(--line);border-radius:6px}.panel-head{display:flex;justify-content:space-between;align-items:center;gap:14px;padding-bottom:12px;border-bottom:1px solid var(--line)}.panel h2{margin:0;color:var(--navy);font-size:17px}.panel-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-top:16px}
+    .empty{margin-top:14px;padding:28px 18px;text-align:center;background:#fbfcfc;border:1px dashed #c6d5d8;border-radius:5px}.empty-mark{width:30px;height:30px;display:grid;place-items:center;margin:0 auto 8px;color:var(--teal);background:#e6f0f1;border-radius:6px;font-weight:700}.empty strong{color:var(--navy);font-size:14px}.empty p{max-width:420px;margin:6px auto 0;color:var(--muted);font-size:12px;line-height:1.45}
+    .form{max-width:850px;margin-top:18px;padding:22px;background:#fff;border:1px solid var(--line);border-radius:6px}.form-head{display:flex;justify-content:space-between;align-items:center;padding-bottom:12px;border-bottom:1px solid var(--line)}.form-head h2{margin:0;color:var(--navy);font-size:18px}.form-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-top:16px}.form-fields .wide{grid-column:1/-1}.error-text{color:var(--error);font-size:10px}
+    .price-summary{display:flex;justify-content:space-between;align-items:center;gap:16px;padding:14px;background:#f7f9f9;border:1px solid var(--line);border-radius:5px}.price-summary strong{display:block;margin-top:4px;color:var(--navy);font-size:22px}.price-summary small{color:var(--muted);font-size:10px}.price-summary .latest{display:block;margin-top:4px}
+    .modal-backdrop{position:fixed;inset:0;display:grid;place-items:center;padding:20px;background:rgb(22 51 65 / .42)}.modal{width:min(480px,100%);padding:20px;background:#fff;border:1px solid var(--line);border-radius:7px;box-shadow:0 16px 40px rgb(22 51 65 / .18)}.modal h2{margin:0;color:var(--navy);font-size:18px}.modal p{color:var(--muted);font-size:12px;line-height:1.45}.modal-actions{display:flex;justify-content:flex-end;gap:9px;margin-top:20px}
+    .footer{margin-top:22px;color:var(--muted);font-size:10px}
+    @media(max-width:800px){.shell{grid-template-columns:1fr}.side{flex-direction:row;overflow:auto;padding:10px;border-right:0;border-bottom:1px solid var(--line)}.side-title,.side-note{display:none}.nav{white-space:nowrap}main{padding:16px}.form-fields{grid-template-columns:1fr}.form-fields .wide{grid-column:auto}.table-wrap{border:0;background:transparent}table,thead,tbody,tr,th,td{display:block}thead{display:none}tr{margin-bottom:10px;padding:8px;background:#fff;border:1px solid var(--line);border-radius:5px}td{display:flex;justify-content:space-between;gap:12px;padding:7px;border-bottom:1px solid #edf2f3}td::before{content:attr(data-label);color:var(--muted);font-size:10px;font-weight:700;text-transform:uppercase}.actions{justify-content:flex-end}}
+    @media(max-width:480px){.topbar{padding:0 12px}.identity{gap:4px}.identity label{display:none}.identity select{max-width:125px}.brand-name{font-size:12px}.side{flex-wrap:wrap;overflow:visible;gap:5px}.nav{flex:1 1 calc(33.333% - 6px);min-width:0;padding:8px 4px;text-align:center;white-space:normal;font-size:11px;line-height:1.25}h1{font-size:22px}}
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="mark">H</span><div><strong>HOPE, INC. / ERP SYSTEM</strong><small>Enterprise resource planning</small></div></div>
+    <div class="identity"><label for="role">Signed in as</label><select id="role" aria-label="Prototype role"><option value="admin">Admin</option><option value="user">User · view only</option><option value="user-delete">User · delete right assigned</option></select></div>
+  </header>
+  <div class="shell">
+    <aside class="side"><div class="side-title">HOPE ERP</div><button class="nav" data-nav="customer">Customer Management</button><button class="nav" data-nav="product">Product Management</button><button class="nav" data-nav="prices">Price History</button><p class="side-note">Review prototype only. Demo records are synthetic, in-memory, and reset when the page reloads. Nothing is saved to the ERP.</p></aside>
+    <main id="main"></main>
+  </div>
+  <div id="overlay"></div>
+  <script>
+    const dateAsOf='2026-11-23';
+    const customers=[
+      {no:'C0017',name:'Acme Health Supply',address:'12 Harbor Avenue',terms:'30D',inactive:false,activeSales:2,stamp:'EDIT marco · Nov 21, 2026'},
+      {no:'C0018',name:'Northshore Medical',address:'42 Market Street',terms:'COD',inactive:false,activeSales:0,stamp:'EDIT marco · Nov 21, 2026'},
+      {no:'C0024',name:'Pacific Surgical',address:'88 Bayfront Road',terms:'45D',inactive:false,activeSales:0,stamp:'EDIT marco · Nov 21, 2026'},
+      {no:'C0032',name:'Metro Care Supplies',address:'6 Cedar Lane',terms:'30D',inactive:true,activeSales:0,stamp:'DELETE marco · Nov 19, 2026'},
+    ];
+    const products=[
+      {code:'AD0001',description:'Toshiba Canvio 1 TB',unit:'ea',inactive:false,activeChildren:2,stamp:'EDIT marco · Nov 21, 2026',prices:[{date:'2024-01-01',price:58,inactive:false},{date:'2026-01-15',price:68,inactive:false},{date:'2027-01-01',price:74,inactive:false}]},
+      {code:'MP0004',description:'Samsung Galaxy S3',unit:'ea',inactive:false,activeChildren:0,stamp:'EDIT marco · Nov 21, 2026',prices:[]},
+      {code:'WT0002',description:'Surgical Gloves, Large',unit:'pkg',inactive:false,activeChildren:0,stamp:'EDIT marco · Nov 21, 2026',prices:[{date:'2026-02-01',price:12.4,inactive:false}]},
+      {code:'AD0002',description:'WD Ultra 1 TB',unit:'ea',inactive:true,activeChildren:0,stamp:'DELETE marco · Nov 19, 2026',prices:[{date:'2024-01-01',price:52,inactive:true}]},
+    ];
+    const rights={
+      admin:new Set(['add_customer','edit_customer','delete_customer','add_product','edit_product','delete_product','add_price','edit_price','delete_price']),
+      user:new Set(['view_customer','view_product','view_price']),
+      'user-delete':new Set(['view_customer','view_product','view_price','delete_customer','delete_product']),
+    };
+    const state={role:'admin',view:'customer',search:'',status:'active',selectedProduct:'AD0001',form:null,formReturnView:'customer',formDraft:{},formError:'',notice:'',modal:null,modalError:''};
+    const main=document.getElementById('main');
+    const overlay=document.getElementById('overlay');
+    const safe=(value)=>String(value).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    const can=(right)=>rights[state.role].has(right);
+    const manager=()=>state.role==='admin';
+    const money=(value)=>value===null?'—':`$${Number(value).toFixed(2)}`;
+    function currentPrice(product){
+      const eligible=product.prices.filter(row=>!row.inactive&&row.date<=dateAsOf).sort((a,b)=>b.date.localeCompare(a.date));
+      return eligible[0]??null;
+    }
+    function header(title,subtitle){
+      return `<div class="crumb">ERP&nbsp; / &nbsp;<strong>${safe(title)}</strong></div><h1>${safe(title)}</h1><p class="subhead">${safe(subtitle)}</p>`;
+    }
+    function visibleByStatus(record){
+      if(!manager()) return !record.inactive;
+      if(state.status==='all') return true;
+      return state.status==='inactive'?record.inactive:!record.inactive;
+    }
+    function customerRows(){
+      const q=state.search.trim().toLowerCase();
+      return customers.filter(c=>visibleByStatus(c)&&(!q||[c.no,c.name,c.address,c.terms].some(v=>v.toLowerCase().includes(q))));
+    }
+    function productRows(){
+      const q=state.search.trim().toLowerCase();
+      return products.filter(p=>visibleByStatus(p)&&(!q||[p.code,p.description,p.unit].some(v=>v.toLowerCase().includes(q))));
+    }
+    function filters(){
+      const product=state.view==='product';
+      return `<form class="toolbar" id="search-form"><div class="field search"><label for="search">Search ${product?'products':'customers'}</label><input id="search" name="q" type="search" maxlength="100" value="${safe(state.search)}" placeholder="${product?'Product code, description or unit':'Customer number, name, address or pay terms'}"></div>${manager()?`<div class="field"><label for="status">Status</label><select id="status"><option value="active" ${state.status==='active'?'selected':''}>Active</option><option value="inactive" ${state.status==='inactive'?'selected':''}>Inactive</option><option value="all" ${state.status==='all'?'selected':''}>All</option></select></div>`:`<p class="filter-note">Only active records are shown.</p>`}<button class="btn primary" type="submit">Search</button><button class="btn" type="button" data-action="clear-search">Clear</button>${can(product?'add_product':'add_customer')?`<button class="btn primary" type="button" data-action="add">Add ${product?'product':'customer'}</button>`:''}</form>`;
+    }
+    function actions(kind,row){
+      const id=kind==='customer'?row.no:row.code;
+      const editRight=kind==='customer'?'edit_customer':'edit_product';
+      const deleteRight=kind==='customer'?'delete_customer':'delete_product';
+      return `<div class="actions">${kind==='product'&&manager()?`<button data-action="prices" data-id="${safe(id)}">Prices</button>`:''}${can(editRight)?`<button data-action="edit" data-kind="${kind}" data-id="${safe(id)}">Edit</button>`:''}${row.inactive?(manager()?`<button class="restore" data-action="restore" data-kind="${kind}" data-id="${safe(id)}">Restore</button>`:''):can(deleteRight)?`<button class="delete" data-action="delete" data-kind="${kind}" data-id="${safe(id)}">Soft delete</button>`:''}</div>`;
+    }
+    function customerTable(){
+      const rows=customerRows();
+      if(!rows.length) return `<div class="empty"><span class="empty-mark">C</span><strong>${state.search?'No customers match this search.':'No customers to display.'}</strong><p>${state.search?'Try another search or clear the filter.':'Add a customer to begin keeping customer details in one place.'}</p></div>`;
+      const showActions=manager()||can('edit_customer')||rows.some(c=>!c.inactive&&can('delete_customer'));
+      return `<div class="table-wrap"><table><thead><tr><th>Cust No.</th><th>Customer Name</th><th>Address</th><th>Pay Terms</th>${manager()?'<th>Status</th><th>Stamp</th>':''}${showActions?'<th>Actions</th>':''}</tr></thead><tbody>${rows.map(c=>`<tr class="${c.inactive?'inactive':''}"><td data-label="Cust No."><strong>${safe(c.no)}</strong></td><td data-label="Customer Name"><strong>${safe(c.name)}</strong></td><td data-label="Address">${safe(c.address)}</td><td data-label="Pay Terms">${safe(c.terms)}</td>${manager()?`<td data-label="Status"><span class="badge ${c.inactive?'inactive':''}">${c.inactive?'Inactive':'Active'}</span></td><td data-label="Stamp">${safe(c.stamp)}</td>`:''}${showActions?`<td data-label="Actions">${actions('customer',c)}</td>`:''}</tr>`).join('')}</tbody></table></div>`;
+    }
+    function productTable(){
+      const rows=productRows();
+      if(!rows.length) return `<div class="empty"><span class="empty-mark">P</span><strong>${state.search?'No products match this search.':'No products to display.'}</strong><p>${state.search?'Try another search or clear the filter.':'Add a product to start building your catalogue.'}</p></div>`;
+      const showActions=manager()||can('edit_product')||rows.some(p=>!p.inactive&&can('delete_product'));
+      return `<div class="table-wrap"><table><thead><tr><th>Prod Code</th><th>Description</th><th>Unit</th><th>Current Price</th>${manager()?'<th>Status</th><th>Stamp</th>':'<th>Price History</th>'}${showActions?'<th>Actions</th>':''}</tr></thead><tbody>${rows.map(p=>`<tr class="${p.inactive?'inactive':''}"><td data-label="Prod Code"><strong>${safe(p.code)}</strong></td><td data-label="Description"><strong>${safe(p.description)}</strong></td><td data-label="Unit">${safe(p.unit)}</td><td data-label="Current Price"><strong>${money(currentPrice(p)?.price??null)}</strong></td>${manager()?`<td data-label="Status"><span class="badge ${p.inactive?'inactive':''}">${p.inactive?'Inactive':'Active'}</span></td><td data-label="Stamp">${safe(p.stamp)}</td>`:`<td data-label="Price History"><button class="btn link" data-action="prices" data-id="${safe(p.code)}">Prices</button></td>`}${showActions?`<td data-label="Actions">${actions('product',p)}</td>`:''}</tr>`).join('')}</tbody></table></div>`;
+    }
+    function renderPrices(){
+      const product=products.find(x=>x.code===state.selectedProduct);
+      if(!product){state.view='product';return render();}
+      const history=manager()?product.prices:product.prices.filter(row=>!row.inactive);
+      const rows=history.map(row=>`<tr class="${row.inactive?'inactive':''}"><td data-label="Effective Date">${safe(row.date)}</td><td data-label="Unit Price">${money(row.price)}</td>${manager()?`<td data-label="Status"><span class="badge ${row.inactive?'inactive':''}">${row.inactive?'Inactive':'Active'}</span></td><td data-label="Stamp">${safe(row.stamp||'EDIT demo · today')}</td>`:''}${can('edit_price')||can('delete_price')?`<td data-label="Actions">${!row.inactive&&can('edit_price')?`<button class="btn link" data-action="edit-price" data-date="${safe(row.date)}">Edit</button>`:''}${!row.inactive&&can('delete_price')?`<button class="btn link" data-action="delete-price" data-date="${safe(row.date)}">Soft delete</button>`:''}</td>`:''}</tr>`).join('');
+      const effective=currentPrice(product);
+      return `${header('Price History',`${safe(product.description)} · Unit: ${safe(product.unit)}`)}<div class="panel"><div class="price-summary"><div><small>Current price · as of ${dateAsOf}</small><strong>${money(effective?.price??null)}</strong><small class="latest">${effective?`Latest active effective date: ${safe(effective.date)}`:'No active price is effective as of today.'}</small></div>${can('add_price')?'<button class="btn primary" data-action="add-price">Add Price</button>':''}</div>${rows?`<div class="table-wrap"><table><thead><tr><th>Effective Date</th><th>Unit Price</th>${manager()?'<th>Status</th><th>Stamp</th>':''}${can('edit_price')||can('delete_price')?'<th>Actions</th>':''}</tr></thead><tbody>${rows}</tbody></table></div>`:`<div class="empty"><span class="empty-mark">₱</span><strong>No price history records to display.</strong><p>Add an effective-dated price. Future prices stay out of Current Price until their date.</p></div>`}<p class="footer">Current price is the latest active record effective on or before today. Future prices stay in history.</p><button class="btn" data-action="back-products">Back to products</button></div>`;
+    }
+    function renderForm(){
+      const {kind,item}=state.form;
+      const edit=Boolean(item);
+      const draft=state.formDraft;
+      const value=(name,fallback='')=>safe(draft[name]??fallback);
+      if(kind==='price'){
+        const product=products.find(p=>p.code===state.selectedProduct);
+        return `${header(`${edit?'Edit':'Add'} Price`,`${safe(product?.description||'Product')} · Product Code ${state.selectedProduct}`)}<form class="form" id="record-form"><div class="form-head"><h2>Price information</h2><small>Effective date and positive Unit Price are required</small></div><div class="form-fields"><div class="field"><label for="effectiveDate">Effective Date *</label><input id="effectiveDate" name="date" type="date" required value="${value('date',item?.date||'')}"></div><div class="field"><label for="unitPrice">Unit Price *</label><input id="unitPrice" name="price" inputmode="decimal" required value="${value('price',item?.price??'')}" placeholder="0.00"></div></div>${state.formError?`<div class="alert" role="alert">${safe(state.formError)}</div>`:''}<div class="button-row"><button class="btn" type="button" data-action="cancel-form">Cancel</button><button class="btn primary" type="submit">Save Price</button></div></form>`;
+      }
+      const customer=kind==='customer';
+      const title=`${edit?'Edit':'Add'} ${customer?'Customer':'Product'}`;
+      const subtitle=customer?'Enter customer information. Changes are saved to the customer record.':'Enter product information. Changes are saved to the product record.';
+      return `${header(title,subtitle)}<form class="form" id="record-form"><div class="form-head"><h2>${customer?'Customer':'Product'} information</h2><small>Fields marked * are required</small></div><div class="form-fields">${customer?`${edit?'':`<div class="field"><label for="custno">Customer No. *</label><input id="custno" name="no" required maxlength="5" minlength="5" value="${value('no')}" placeholder="e.g. C0043"><small>Unique 5-character identifier.</small></div>`}<div class="field"><label for="name">Customer Name *</label><input id="name" name="name" required maxlength="20" value="${value('name',item?.name||'')}" placeholder="Customer name"></div><div class="field wide"><label for="address">Address *</label><input id="address" name="address" required maxlength="50" value="${value('address',item?.address||'')}" placeholder="Street, city, region"></div><div class="field"><label for="terms">Pay Terms *</label><select id="terms" name="terms" required><option value="">Select pay terms</option>${['COD','30D','45D'].map(v=>`<option value="${v}" ${(draft.terms??item?.terms)===v?'selected':''}>${v}</option>`).join('')}</select></div>`:`<div class="field"><label for="code">Product Code *</label><input id="code" name="code" required maxlength="6" minlength="6" value="${value('code',item?.code||'')}" placeholder="e.g. AD0001" ${edit?'disabled':''}></div><div class="field"><label for="description">Description *</label><input id="description" name="description" required maxlength="30" value="${value('description',item?.description||'')}" placeholder="Product description"></div><div class="field"><label for="unit">Unit *</label><select id="unit" name="unit" required><option value="">Select unit</option>${['pc','ea','mtr','pkg','ltr'].map(v=>`<option value="${v}" ${(draft.unit??item?.unit)===v?'selected':''}>${v}</option>`).join('')}</select></div>`}</div>${state.formError?`<div class="alert" role="alert">${safe(state.formError)}</div>`:''}<div class="button-row"><button class="btn" type="button" data-action="cancel-form">Cancel</button><button class="btn primary" type="submit">Save ${customer?'Customer':'Product'}</button></div></form>`;
+    }
+    function render(){
+      document.getElementById('role').value=state.role;
+      document.querySelectorAll('[data-nav]').forEach(button=>button.setAttribute('aria-current',button.dataset.nav===state.view?'page':'false'));
+      if(state.view==='customer') main.innerHTML=`${header('Customer Management','Manage customer details and payment terms.')}${state.notice?`<div class="notice" role="status">${safe(state.notice)}</div>`:''}${filters()}${customerTable()}<p class="footer">Customer records stay available for linked history when made inactive.</p>`;
+      else if(state.view==='product') main.innerHTML=`${header('Product Management','Manage products and their effective-dated prices.')}${state.notice?`<div class="notice" role="status">${safe(state.notice)}</div>`:''}${filters()}${productTable()}<p class="footer">Current price is the latest active price effective on or before today; future prices stay in history.</p>`;
+      else if(state.view==='prices') main.innerHTML=renderPrices();
+      else if(state.view==='form') main.innerHTML=renderForm();
+      else main.innerHTML=`${header('Access unavailable','You do not have permission to view this module.')}`;
+      bind();
+    }
+    function openForm(kind,item=null){state.formReturnView=state.view;state.form={kind,item};state.formDraft={};state.formError='';state.view='form';render();}
+    function action(name,kind,id){
+      if(name==='clear-search'){state.search='';render();return;}
+      if(name==='add'){openForm(state.view);return;}
+      if(name==='edit'){const item=kind==='customer'?customers.find(x=>x.no===id):products.find(x=>x.code===id);openForm(kind,item);return;}
+      if(name==='prices'){state.selectedProduct=id;state.view='prices';render();return;}
+      if(name==='back-products'){state.view='product';render();return;}
+      if(name==='delete'||name==='restore'){state.modal={kind,id,restore:name==='restore'};renderModal();return;}
+      if(name==='add-price'){openForm('price');return;}
+      if(name==='edit-price'){const product=products.find(p=>p.code===state.selectedProduct);const item=product?.prices.find(row=>row.date===id);openForm('price',item);return;}
+      if(name==='delete-price'){state.modal={kind:'price',id:state.selectedProduct,date:id,restore:false};renderModal();}
+    }
+    function renderModal(){
+      const {kind,id,date,restore}=state.modal;
+      const product=kind==='product'||kind==='price'?products.find(p=>p.code===id):null;
+      const record=kind==='customer'?customers.find(c=>c.no===id):product;
+      const price=kind==='price'?product?.prices.find(row=>row.date===date):null;
+      if(!record||(kind==='price'&&!price)){state.modal=null;return render();}
+      const entity=kind==='customer'?'customer':kind==='product'?'product':'price';
+      const heading=restore?`Restore this ${entity}?`:`Move this ${entity} to Inactive?`;
+      const detail=restore?'The original record and links will be available again.':kind==='customer'?'This is a soft delete, not permanent removal. Linked sales stay intact.':kind==='product'?'This is a soft delete, not permanent removal. Price history and sales references stay intact.':'This is a soft delete, not permanent removal. Historical records remain available.';
+      overlay.innerHTML=`<div class="modal-backdrop"><section class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title"><h2 id="modal-title">${heading}</h2><p>${detail}</p>${state.modalError?`<div class="alert" role="alert">${safe(state.modalError)}</div>`:''}<div class="modal-actions"><button class="btn" data-action="cancel-modal">Cancel</button><button class="btn ${restore?'primary':'danger'}" data-action="confirm-modal">${restore?'Restore':'Move to Inactive'}</button></div></section></div>`;
+      bind();
+    }
+    function closeModal(){state.modal=null;state.modalError='';overlay.innerHTML='';}
+    function confirmModal(){
+      const {kind,id,date,restore}=state.modal;
+      if(kind==='price'){
+        const product=products.find(p=>p.code===id);const row=product?.prices.find(p=>p.date===date);
+        if(row){row.inactive=true;row.stamp='DELETE demo · today';state.notice='Price moved to Inactive; its history is retained.';}
+      }else{
+        const record=kind==='customer'?customers.find(c=>c.no===id):products.find(p=>p.code===id);
+        if(!record)return closeModal();
+        if(!restore&&record.activeChildren){state.modalError=`This ${kind} has active related records and cannot be deactivated.`;return renderModal();}
+        record.inactive=!restore;record.stamp=restore?'RESTORE demo · today':'DELETE demo · today';
+        state.notice=restore?`${kind==='customer'?'Customer':'Product'} restored.`:`${kind==='customer'?'Customer':'Product'} moved to Inactive.`;
+      }
+      closeModal();render();
+    }
+    function saveForm(event){
+      event.preventDefault();const kind=state.form.kind;const item=state.form.item;const values=Object.fromEntries(new FormData(event.currentTarget));
+      const invalid=(message)=>{state.formDraft=values;state.formError=message;render();};
+      if(kind==='customer'){
+        if(!values.name?.trim()||!values.address?.trim()||!['COD','30D','45D'].includes(values.terms)){return invalid('Enter a customer name, address and valid pay terms.');}
+        const code=String(values.no||'').trim().toUpperCase();
+        if(!item&&!/^[A-Z0-9]{5}$/.test(code)){return invalid('Enter a 5-character customer number.');}
+        if(!item&&customers.some(c=>c.no===code)){return invalid('That customer number is already in use. Choose another 5-character number.');}
+        if(item)Object.assign(item,{name:String(values.name).trim(),address:String(values.address).trim(),terms:values.terms});
+        else customers.unshift({no:code,name:String(values.name).trim(),address:String(values.address).trim(),terms:values.terms,inactive:false,activeSales:0,stamp:'ADD demo · today'});
+        state.notice=item?'Customer updated.':'Customer added.';state.view='customer';
+      }else if(kind==='product'){
+        if(!values.description?.trim()||!['pc','ea','mtr','pkg','ltr'].includes(values.unit)){return invalid('Enter a description and choose an allowed unit.');}
+        const code=String(values.code||'').trim().toUpperCase();
+        if(!item&&!/^[A-Z0-9]{6}$/.test(code)){return invalid('Enter a 6-character product code.');}
+        if(!item&&products.some(p=>p.code===code)){return invalid('That product code is already in use. Choose another 6-character code.');}
+        if(item)Object.assign(item,{description:String(values.description).trim(),unit:values.unit});
+        else products.unshift({code,description:String(values.description).trim(),unit:values.unit,inactive:false,activeChildren:0,stamp:'ADD demo · today',prices:[]});
+        state.notice=item?'Product updated.':'Product added.';state.view='product';
+      }else{
+        const price=Number(values.price);const date=String(values.date||'');
+        const parsedDate=new Date(`${date}T00:00:00Z`);
+        if(!/^\d{4}-\d{2}-\d{2}$/.test(date)||Number.isNaN(parsedDate.valueOf())||parsedDate.toISOString().slice(0,10)!==date||!Number.isFinite(price)||price<=0||!/^\d+(\.\d{1,2})?$/.test(String(values.price))){return invalid('Enter a valid effective date and positive Unit Price with no more than two decimal places.');}
+        const product=products.find(p=>p.code===state.selectedProduct);
+        if(!product)return render();
+        if(product.prices.some(row=>row.date===date&&row!==item)){return invalid('A price already exists for that effective date. Choose another date.');}
+        if(item){item.date=date;item.price=price;item.inactive=false;item.stamp='EDIT demo · today';}
+        else product.prices.push({date,price,inactive:false,stamp:'ADD demo · today'});
+        state.notice=item?'Price updated.':'Price added.';state.view='prices';
+      }
+      state.form=null;state.formDraft={};state.formError='';render();
+    }
+    function bind(){
+      document.querySelectorAll('[data-nav]').forEach(button=>button.onclick=()=>{state.view=button.dataset.nav;state.search='';state.status='active';state.notice='';render();});
+      const role=document.getElementById('role');if(role)role.onchange=()=>{state.role=role.value;if(!manager())state.status='active';state.notice='';render();};
+      const status=document.getElementById('status');if(status)status.onchange=()=>{state.status=status.value;render();};
+      const searchForm=document.getElementById('search-form');if(searchForm)searchForm.onsubmit=event=>{event.preventDefault();state.search=document.getElementById('search').value;render();};
+      document.querySelectorAll('[data-action]').forEach(button=>button.onclick=()=>{
+        const name=button.dataset.action;
+        if(name==='cancel-form'){state.form=null;state.formDraft={};state.formError='';state.view=state.formReturnView;return render();}
+        if(name==='cancel-modal'){closeModal();return;}
+        if(name==='confirm-modal'){confirmModal();return;}
+        action(name,button.dataset.kind,button.dataset.id||button.dataset.date);
+      });
+      const form=document.getElementById('record-form');if(form)form.onsubmit=saveForm;
+    }
+    function renderPage(){
+      render();
+    }
+    const params=new URLSearchParams(location.search);
+    const requestedView=params.get('view');
+    const requestedRole=params.get('role');
+    state.view=['customer','product','prices','form','denied'].includes(requestedView)?requestedView:'customer';
+    state.role=Object.hasOwn(rights,requestedRole)?requestedRole:'admin';
+    state.status=['active','inactive','all'].includes(params.get('status'))?params.get('status'):'active';
+    state.search=params.get('q')||'';
+    state.selectedProduct=params.get('product')||state.selectedProduct;
+    if(params.get('screen')==='validation'){state.view='form';state.formReturnView='customer';state.form={kind:'customer',item:null};state.formError='Enter a customer name, address and valid pay terms.';}
+    if(params.get('screen')==='permission')state.view='denied';
+    if(params.get('screen')==='save-error'){state.view='form';state.formReturnView='product';state.form={kind:'product',item:products[0]};state.formError='Product could not be saved. Check your connection and try again. Your changes are still here.';}
+    renderPage();
+    if(params.get('screen')==='delete'){state.view='customer';renderPage();state.modal={kind:'customer',id:'C0017',restore:false};renderModal();}
+    if(params.get('screen')==='price-delete'){state.view='prices';state.selectedProduct='AD0001';renderPage();state.modal={kind:'price',id:'AD0001',date:'2024-01-01',restore:false};renderModal();}
+  </script>
+</body>
+</html>
