@@ -25,4 +25,4 @@ The board follows the shipped HOPE palette and Aptos-first typography. The HTML 
 
 The state board is placed as a PNG image inside a Figma frame in the existing Figma file. The connected Figma account had reached its Starter integration limit, so the frame is rasterized; the HTML source remains editable. No SVG files were created.
 
-The file is still in Gabriel’s Figma Drafts. Figma indicated that teammates cannot find or contribute to Drafts files. It was not moved or shared; the file owner must move it to the team or share it with the UI/UX owner before Elish can review it.
+The file was moved from Gabriel’s Drafts into Gabriel A. Zantua’s **Team project** on 2026-11-23, with the operator’s approval. The Figma Share panel says access follows Team project membership and currently lists one person. Elish’s access is therefore not confirmed; no separate editor invitation has been sent. The state-board link is available to team members at the Figma URL above.
