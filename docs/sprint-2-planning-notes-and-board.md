@@ -21,7 +21,7 @@ Sprint 2 covers Customers and Products only. Do not count Human Resources, Sales
 - UI/UX Designer: @ElishLim
 - Tester: @laurencechua
 
-For Sprint 2, use the existing permanent role branches and worktrees; do not create task branches or worktrees. Keep one issue active on a role branch at a time and one issue per PR. The assigned issue owner opens the PR, a different teammate reviews it, and the Scrum Master merges it to setup/initial-project-structure after required checks. Synchronize a role branch only after its prior PR is merged and its changes are preserved.
+For Sprint 2 execution, use one existing issue-specific `s2/<role>-<nn>` branch and isolated worktree per task. Keep one issue per branch and PR; a dependent branch may be stacked on its required predecessor so its PR diff stays task-specific. The assigned issue owner opens the PR, a different teammate reviews it, and the Scrum Master merges it to `setup/initial-project-structure` after required checks. Never push the local `test/sprint2-integration` branch or push directly to the integration branch.
 
 The repository’s working agreement still says “Proposed - Pending Team Review,” so the workflow above is recorded as the current operating direction. Do not describe it as formally adopted until the team confirms it. The currently enforced approval count and required status checks have not been independently confirmed.
 
