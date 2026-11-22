@@ -2,7 +2,7 @@
 
 **Issue:** [#142 — Update velocity and burndown](https://github.com/zurielzantua/Hope-Inc.-Midterm-Project/issues/142)
 
-**Snapshot:** 2026-11-22 (Asia/Manila); GitHub event times below are UTC.
+**Snapshot:** 2026-11-23 (Asia/Manila); GitHub event times below are UTC.
 
 This is an evidence-based, issue-count snapshot. The sprint references do not provide a calendar start date or story-point estimates, so this report does not assign calendar events to sprint days or forecast story-point velocity.
 
@@ -27,31 +27,33 @@ The planning board records 30 Sprint 2 issues open at its 2026-11-21 snapshot; i
 | 2026-11-21 11:28:12 | S2-UIX-01 #161, PR #168 | 2 | 28 |
 | 2026-11-21 14:50:40 | S2-UIX-02 #158, PR #169 | 3 | 27 |
 | 2026-11-21 15:02:38 | UIX-01 image correction, PR #170 | 3 | 27 |
+| 2026-11-22 18:02:11 | No additional task PR merged; 20 agent-managed branches are published | 3 | 27 |
 
 Observed count-based throughput is three task PRs merged on 2026-11-21. This is too little history for a reliable completion-rate projection.
 
 ## Current task status
 
-GitHub shows 3 of 30 issues closed and 27 open. Seven task branches are published for owner PR creation; no Sprint 2 task PR is open. The local tracker separates remaining work by state:
+GitHub shows 3 of 30 issues closed and 27 open. Twenty agent-managed task branches are published, but no Sprint 2 task PR is open. Branch publication does not count as issue completion. The local tracker separates the 24 agent-managed tasks by state:
 
 | State | Tasks |
 |---|---|
 | Merged / Done | #163, #161, #158 |
-| Awaiting owner PR | #162 |
-| Pushed, awaiting owner PR | #142, #150, #151, #153, #157, #159, #160 |
-| Integration-validated, local only | #137, #141, #144, #147, #154 |
-| Locally committed, PR not merged | #139, #146, #148, #152, #155 |
-| Not started by the orchestration tracker | #134, #138, #145, #135, #136, #140, #143, #149, #156 |
+| Published; awaiting owner PR | #162, #160, #159, #157, #155, #154, #153, #152, #151, #150, #148, #147, #146, #145, #144, #142, #141, #139, #138, #137 |
+| Not started / blocked on human evidence | #134 |
 
-The six Tester-owned issues—#156, #149, #143, #140, #136, and #135—remain open. The Tester’s actual progress is unknown; no tests are claimed as passed. Pushed branches and integration-preview results are not counted as completed Sprint 2 issues.
+The six Tester-owned issues—#156, #149, #143, #140, #136, and #135—remain exclusively human-owned; their progress is unknown. No Tester tests or reports are claimed as completed. S2-SM-05 #134 remains blocked on merged task PRs, UIX-05 evidence, and Tester results.
 
-At this snapshot, the tracker has 3 Done, 1 Awaiting Owner PR, 7 Pushed, 5 Local Committed, 5 Integration Validated, and 9 Not Started tasks. Three of the not-started tasks are agent-managed; six belong to the human Tester.
+At this snapshot, agent-managed progress is 3 merged, 20 published and awaiting owner PR, and 1 not started. The local-only `test/sprint2-integration` branch is not published. DEV-07 #141 and DEV-08 #137 use clean, task-only remote publication commits; their original composite local commits remain preserved.
+
+For S2-SM-04, the older published `s2/sm-04` reference is preserved because its commit history includes SM-03 updates. The clean issue-only PR branch is `s2/sm-04-pr`, based on `s2/sm-03`.
 
 ## Risks to the day-10 review and Sprint 3 entry
 
 - Twenty-seven issues remain open; only three have task-linked, reviewed, merged PRs.
-- Seven issue branches have been published for owner PR creation; they still need owner PRs, teammate reviews, and Scrum Master merges. Other Developer and DB Admin work remains local pending database or PR-diff gates.
-- Customer/Product SQL runtime checks remain unverified because no local PostgreSQL/Supabase runtime is available. Hosted migration and email verification have not been performed.
+- Twenty issue branches have been published for owner PR creation; they still need owner PRs, teammate reviews, and dependency-ordered Scrum Master merges.
+- The current local integration preview `0cff7a82` passed 237/237 Node tests, the production build, and `git diff --check`. A disposable PostgreSQL 17.11 environment passed the recorded DBA-02 through DBA-06 runtime checks. Hosted Supabase Auth/JWT/RLS, hosted migration state, and email delivery remain unverified.
+- DEV-07 #141 is stacked on DEV-06 #144 and must not merge until DEV-05 #147 and DBA-02 #155 are integrated. DEV-08 #137 is stacked on DEV-07 and also awaits its listed Developer predecessors and DBA-06 #139.
+- Elish’s UIX-04 editor invitation is sent and awaits acceptance. UIX-05 is a synthetic prototype/source review; authenticated production screens were not exercised.
 - Tester-owned execution and regression results are outstanding or unknown. Do not count these as passed.
 - The sprint calendar start date and story-point estimates are unavailable, so a sprint-day burndown or point-based velocity cannot be calculated from the evidence in hand.
 
