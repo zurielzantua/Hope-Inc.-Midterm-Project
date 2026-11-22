@@ -1,0 +1,341 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>HOPE ERP — UIX-04 State Handoff</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --navy: #163341;
+      --teal: #0b6e75;
+      --bronze: #c28c58;
+      --cloud: #f4f7f8;
+      --surface: #fff;
+      --ink: #1a2b35;
+      --muted: #60757f;
+      --line: #dae4e6;
+      --success: #237856;
+      --warning: #a66b16;
+      --error: #b43f49;
+      font-family: Aptos, "Segoe UI", "Helvetica Neue", sans-serif;
+      color: var(--ink);
+      background: var(--cloud);
+    }
+
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #e9eff1; }
+    button, input, select { font: inherit; }
+    button { cursor: pointer; }
+
+    .board {
+      width: 1440px;
+      min-height: 1024px;
+      margin: 0 auto;
+      padding: 26px 30px 20px;
+      background: var(--cloud);
+    }
+
+    .masthead {
+      min-height: 78px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 24px;
+      padding: 14px 20px;
+      color: white;
+      background: var(--navy);
+      border-bottom: 3px solid var(--bronze);
+    }
+
+    .brand { display: flex; align-items: center; gap: 12px; }
+    .brand-mark {
+      width: 38px;
+      height: 38px;
+      display: grid;
+      place-items: center;
+      color: var(--bronze);
+      border: 1px solid var(--bronze);
+      border-radius: 9px;
+      font-size: 18px;
+      font-weight: 700;
+    }
+    .brand-name { font-size: 15px; font-weight: 700; letter-spacing: .02em; }
+    .brand-subtitle { margin-top: 2px; color: #cad6da; font-size: 12px; }
+    .handoff-meta { text-align: right; color: #d5e0e3; font-size: 12px; line-height: 1.5; }
+    h1 { margin: 20px 0 3px; color: var(--navy); font-size: 23px; line-height: 1.2; }
+    .intro { margin: 0; color: var(--muted); font-size: 13px; }
+
+    .states {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+      margin-top: 16px;
+    }
+
+    .state {
+      min-height: 255px;
+      padding: 13px 14px;
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 7px;
+    }
+    .state-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding-bottom: 9px;
+      border-bottom: 1px solid var(--line);
+    }
+    .state-title { color: var(--navy); font-size: 15px; font-weight: 700; }
+    .role {
+      flex: 0 0 auto;
+      padding: 3px 8px;
+      color: var(--muted);
+      background: var(--cloud);
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      font-size: 10px;
+    }
+    .module-label { margin: 11px 0 7px; color: var(--muted); font-size: 10px; font-weight: 700; letter-spacing: .07em; }
+    .mock-search, .mock-input, .mock-select {
+      min-height: 31px;
+      display: flex;
+      align-items: center;
+      padding: 6px 9px;
+      color: var(--muted);
+      background: white;
+      border: 1px solid var(--line);
+      border-radius: 4px;
+      font-size: 11px;
+    }
+    .mock-search { margin-bottom: 9px; }
+    .tabs { display: flex; gap: 6px; margin: 8px 0; }
+    .tab {
+      padding: 4px 9px;
+      color: var(--muted);
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      font-size: 10px;
+    }
+    .tab.active { color: white; background: var(--teal); border-color: var(--teal); }
+    .empty {
+      min-height: 112px;
+      display: grid;
+      place-content: center;
+      gap: 4px;
+      text-align: center;
+      background: #fbfcfc;
+      border: 1px dashed #c6d5d8;
+      border-radius: 5px;
+    }
+    .empty-mark {
+      width: 25px;
+      height: 25px;
+      display: grid;
+      place-items: center;
+      margin: 0 auto 2px;
+      color: var(--teal);
+      background: #e6f0f1;
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 700;
+    }
+    .empty strong { color: var(--navy); font-size: 12px; }
+    .empty p { max-width: 260px; margin: 0 auto; color: var(--muted); font-size: 10px; line-height: 1.35; }
+    .button-row { display: flex; justify-content: flex-end; gap: 7px; margin-top: 9px; }
+    .button {
+      min-height: 28px;
+      padding: 5px 10px;
+      color: var(--navy);
+      background: white;
+      border: 1px solid var(--line);
+      border-radius: 4px;
+      font-size: 10px;
+      font-weight: 700;
+    }
+    .button.primary { color: white; background: var(--teal); border-color: var(--teal); }
+    .button.danger { color: white; background: var(--error); border-color: var(--error); }
+    .button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid #a7d5d7; outline-offset: 2px; }
+    .field { margin-top: 8px; }
+    .field label { display: block; margin-bottom: 3px; color: var(--ink); font-size: 10px; font-weight: 700; }
+    .field label span { color: var(--bronze); }
+    .mock-input.invalid, .mock-select.invalid { border-color: var(--error); }
+    .field-error { margin: 3px 0 0; color: var(--error); font-size: 10px; line-height: 1.3; }
+    .alert {
+      margin-top: 12px;
+      padding: 9px 10px;
+      color: #7e3038;
+      background: #fbefef;
+      border: 1px solid #e8bfc2;
+      border-left: 3px solid var(--error);
+      border-radius: 4px;
+      font-size: 11px;
+      line-height: 1.35;
+    }
+    .alert strong { display: block; margin-bottom: 2px; }
+    .denied {
+      margin-top: 18px;
+      padding: 16px 12px;
+      background: #fbfcfc;
+      border-left: 3px solid var(--warning);
+    }
+    .denied strong { color: var(--navy); font-size: 13px; }
+    .denied p { margin: 5px 0 0; color: var(--muted); font-size: 11px; line-height: 1.4; }
+    .dialog {
+      margin-top: 12px;
+      padding: 13px;
+      background: white;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      box-shadow: 0 5px 16px rgb(22 51 65 / .08);
+    }
+    .dialog h3 { margin: 0; color: var(--navy); font-size: 13px; }
+    .dialog p { margin: 6px 0 0; color: var(--muted); font-size: 10px; line-height: 1.4; }
+    .entity-choices { display: flex; gap: 5px; margin: 9px 0; }
+    .entity-choices button { padding: 4px 7px; color: var(--muted); background: white; border: 1px solid var(--line); border-radius: 4px; font-size: 9px; }
+    .entity-choices button[aria-pressed="true"] { color: var(--teal); border-color: var(--teal); }
+    .confirm-note { margin-top: 7px; color: var(--muted); font-size: 9px; }
+    .footnote { margin-top: 12px; color: var(--muted); font-size: 10px; }
+    .footer { display: flex; justify-content: space-between; margin-top: 12px; padding-top: 8px; border-top: 1px solid var(--line); color: var(--muted); font-size: 10px; }
+
+    @media (max-width: 1100px) {
+      .board { width: 100%; min-height: 100vh; }
+      .states { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+    @media (max-width: 680px) {
+      .board { padding: 12px; }
+      .states { grid-template-columns: 1fr; }
+      .masthead { align-items: flex-start; }
+      .handoff-meta { max-width: 150px; }
+    }
+    @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; } }
+  </style>
+</head>
+<body>
+  <main class="board">
+    <header class="masthead">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true">H</div>
+        <div><div class="brand-name">HOPE, INC. / ERP SYSTEM</div><div class="brand-subtitle">Enterprise resource planning</div></div>
+      </div>
+      <div class="handoff-meta">Sprint 2 · UIX-04<br>Empty, validation, error and confirmation states</div>
+    </header>
+
+    <h1>Customer, Product and Price History states</h1>
+    <p class="intro">States align with the implemented HOPE screens. Errors stay actionable and never expose database details.</p>
+
+    <section class="states" aria-label="UIX-04 state examples">
+      <article class="state">
+        <header class="state-head"><span class="state-title">Customer list · empty</span><span class="role">Admin</span></header>
+        <div class="module-label">CUSTOMER MANAGEMENT</div>
+        <div class="mock-search">Search by customer number, name, address or pay terms</div>
+        <div class="tabs"><span class="tab active">Active</span><span class="tab">Inactive</span><span class="tab">All</span></div>
+        <div class="empty"><span class="empty-mark">C</span><strong>No customers to display.</strong><p>Add a customer to begin keeping customer details in one place.</p></div>
+        <div class="button-row"><button class="button primary">Add customer</button></div>
+      </article>
+
+      <article class="state">
+        <header class="state-head"><span class="state-title">Product list · no results</span><span class="role">User</span></header>
+        <div class="module-label">PRODUCT MANAGEMENT</div>
+        <div class="mock-search">Search products: “surgical kit”</div>
+        <div class="empty"><span class="empty-mark">P</span><strong>No products match this search.</strong><p>Try a shorter search or clear the filter to see active products.</p></div>
+        <div class="button-row"><button class="button">Clear search</button></div>
+      </article>
+
+      <article class="state">
+        <header class="state-head"><span class="state-title">Price History · empty</span><span class="role">Admin</span></header>
+        <div class="module-label">PRODUCTS / AD0004</div>
+        <div class="mock-search"><strong>Current price&nbsp; —</strong>&nbsp;&nbsp; No eligible price as of today</div>
+        <div class="empty"><span class="empty-mark">₱</span><strong>No price history records to display.</strong><p>Add an effective-dated price. Future prices stay out of Current Price until their date.</p></div>
+        <div class="button-row"><button class="button primary">Add price</button></div>
+      </article>
+
+      <article class="state">
+        <header class="state-head"><span class="state-title">Customer form · validation</span><span class="role">Admin</span></header>
+        <div class="module-label">ADD CUSTOMER</div>
+        <div class="field"><label>Customer No. <span>*</span></label><div class="mock-input invalid">C0017</div><p class="field-error">That customer number is already in use. Choose another 5-character number.</p></div>
+        <div class="field"><label>Customer Name <span>*</span></label><div class="mock-input invalid">Enter a customer name</div><p class="field-error">Customer name is required.</p></div>
+        <div class="field"><label>Pay Terms <span>*</span></label><div class="mock-select">Select pay terms</div></div>
+        <div class="button-row"><button class="button">Cancel</button><button class="button primary">Save customer</button></div>
+      </article>
+
+      <article class="state">
+        <header class="state-head"><span class="state-title">Product form · save failed</span><span class="role">Admin</span></header>
+        <div class="module-label">EDIT PRODUCT · AD0001</div>
+        <div class="field"><label>Description <span>*</span></label><div class="mock-input">Toshiba Canvio 1 TB</div></div>
+        <div class="field"><label>Unit <span>*</span></label><div class="mock-select">Each (ea)</div></div>
+        <div class="alert" role="alert"><strong>Product could not be saved.</strong>Check your connection and try again. Your changes are still here.</div>
+        <div class="button-row"><button class="button">Cancel</button><button class="button primary" id="retry">Try again</button></div>
+        <p class="confirm-note" id="retry-result" aria-live="polite">Your form values are still here.</p>
+      </article>
+
+      <article class="state">
+        <header class="state-head"><span class="state-title">Permission denied</span><span class="role">User</span></header>
+        <div class="module-label">PRODUCT MANAGEMENT</div>
+        <div class="denied"><strong>You do not have permission to perform this Product action.</strong><p>Your access is controlled by your assigned Product rights. Return to the list or contact an administrator.</p></div>
+        <div class="button-row"><button class="button primary">Return to products</button></div>
+        <p class="footnote">The server refuses the action; hiding the button alone is not authorization.</p>
+      </article>
+
+      <article class="state">
+        <header class="state-head"><span class="state-title">Soft-delete confirmation</span><span class="role">Admin</span></header>
+        <div class="entity-choices" role="group" aria-label="Choose record type">
+          <button type="button" data-entity="customer" aria-pressed="true">Customer</button>
+          <button type="button" data-entity="product" aria-pressed="false">Product</button>
+          <button type="button" data-entity="price" aria-pressed="false">Price History</button>
+        </div>
+        <div class="dialog" role="dialog" aria-modal="false" aria-labelledby="confirm-title">
+          <h3 id="confirm-title">Move this customer to Inactive?</h3>
+          <p id="confirm-copy">This is a soft delete, not permanent removal. Linked sales stay intact. An Admin can restore the customer later.</p>
+          <div class="button-row"><button class="button" type="button" id="cancel-delete">Cancel</button><button class="button danger" type="button" id="confirm-delete">Move to Inactive</button></div>
+          <p class="confirm-note" id="confirm-result" aria-live="polite">Cancel leaves the record unchanged.</p>
+        </div>
+      </article>
+
+      <article class="state">
+        <header class="state-head"><span class="state-title">API error · safe feedback</span><span class="role">Admin</span></header>
+        <div class="module-label">CUSTOMER MANAGEMENT</div>
+        <div class="alert" role="alert"><strong>Customer records are temporarily unavailable.</strong>Refresh the page. If the problem continues, contact an administrator.</div>
+        <div class="empty" style="margin-top:10px;min-height:72px"><strong>Internal database details stay private.</strong><p>No raw SQL, table names or server messages are shown.</p></div>
+        <div class="button-row"><button class="button">Contact administrator</button><button class="button primary">Refresh</button></div>
+      </article>
+
+      <article class="state">
+        <header class="state-head"><span class="state-title">Permission-controlled actions</span><span class="role">Admin / User</span></header>
+        <div class="module-label">ACTION RULES</div>
+        <div class="empty" style="min-height:118px;gap:7px">
+          <strong>Delete follows the assigned right.</strong>
+          <p>Restore appears only for Admins and Superadmins, matching the Student Guide’s 36-right catalog.</p>
+          <p>Price Add, Edit and Delete remain independently permission-checked.</p>
+        </div>
+        <p class="footnote">Inactive customer and product records remain linked to their history.</p>
+      </article>
+    </section>
+
+    <footer class="footer"><span>UIX-04 · states for Customer, Product and Price History</span><span>Prototype uses synthetic records only · no data is saved</span></footer>
+  </main>
+
+  <script>
+    const copy = {
+      customer: ['Move this customer to Inactive?', 'This is a soft delete, not permanent removal. Linked sales stay intact. An Admin can restore the customer later.'],
+      product: ['Move this product to Inactive?', 'This is a soft delete, not permanent removal. Price history and sales references stay intact. An Admin can restore the product later.'],
+      price: ['Move this price to Inactive?', 'This is a soft delete, not permanent removal. The price history row stays available for historical records.'],
+    };
+    const title = document.getElementById('confirm-title');
+    const message = document.getElementById('confirm-copy');
+    const result = document.getElementById('confirm-result');
+    document.querySelectorAll('[data-entity]').forEach((button) => button.addEventListener('click', () => {
+      document.querySelectorAll('[data-entity]').forEach((item) => item.setAttribute('aria-pressed', String(item === button)));
+      [title.textContent, message.textContent] = copy[button.dataset.entity];
+      result.textContent = 'Cancel leaves the record unchanged.';
+    }));
+    document.getElementById('cancel-delete').addEventListener('click', () => { result.textContent = 'Canceled. The record is unchanged.'; });
+    document.getElementById('confirm-delete').addEventListener('click', () => { result.textContent = 'Moved to Inactive. Linked history remains.'; });
+    document.getElementById('retry').addEventListener('click', () => {
+      document.getElementById('retry-result').textContent = 'Still unavailable. Your form values remain in place.';
+    });
+  </script>
+</body>
+</html>
