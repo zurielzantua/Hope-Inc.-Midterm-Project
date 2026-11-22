@@ -1,7 +1,11 @@
 -- S2-DBA-06 read-only plan capture for the implemented Customer/Product list paths.
 -- Run only in an isolated database with representative synthetic data and all
--- prerequisite migrations applied. The 3-customer/5-product seed is too small
--- to support a performance conclusion. Connect as an owner able to SET ROLE.
+-- prerequisite migrations applied. The small seed alone is too small to support
+-- a performance conclusion. Connect as an owner able to SET ROLE.
+-- The measured PostgreSQL 17.11 fixture had 9,089 customers, 12,066 products,
+-- and 132,093 price rows. Leading-wildcard ILIKE scans took 5.3-8.2 ms, so no
+-- substring-search index was justified. The product/date covering index and
+-- batch RPC findings are recorded in docs/s2-dba-06-query-performance.md.
 --
 -- Example:
 --   psql "$HOPE_ISOLATED_DATABASE_URL" -v ON_ERROR_STOP=1 \
@@ -107,5 +111,40 @@ SELECT unitprice
 \echo 'Current-price RPC invoked by the Product list once per returned Product'
 EXPLAIN (ANALYZE, BUFFERS, VERBOSE)
 SELECT public.product_price_as_of('D5P001', DATE '2026-11-22');
+
+\echo 'Set-based current-price RPC for all active products'
+EXPLAIN (ANALYZE, BUFFERS, VERBOSE)
+SELECT count(*) AS products_with_an_effective_price,
+       count(unitprice) AS returned_prices
+  FROM public.product_prices_as_of(
+      ARRAY(
+          SELECT p.prodcode::varchar(6)
+            FROM public.product_active AS p
+           ORDER BY p.prodcode
+      ),
+      DATE '2026-11-22'
+  );
+
+\echo 'Index plan used by the set-based current-price lookup'
+EXPLAIN (ANALYZE, BUFFERS, VERBOSE)
+WITH requested AS (
+    SELECT DISTINCT input.prodcode
+      FROM pg_catalog.unnest(
+          ARRAY(
+              SELECT p.prodcode::varchar(6)
+                FROM public.product_active AS p
+          )
+      ) AS input(prodcode)
+)
+SELECT requested.prodcode, latest.unitprice
+  FROM requested
+ CROSS JOIN LATERAL (
+      SELECT ph.unitprice
+        FROM public.pricehist_active AS ph
+       WHERE ph.prodcode = requested.prodcode
+         AND ph.effdate <= DATE '2026-11-22'
+       ORDER BY ph.effdate DESC
+       LIMIT 1
+  ) AS latest;
 
 ROLLBACK;
