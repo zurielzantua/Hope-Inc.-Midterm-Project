@@ -35,7 +35,7 @@ const dependencies = (overrides = {}) => ({
   ...overrides,
 });
 
-test('Soft delete and restore both require the server-derived Customer delete right', async () => {
+test('Soft delete requires delete_customer, while Restore is Admin/Superadmin-only without a separate right', async () => {
   let writes = 0;
   for (const deniedActor of [null, actor([]), actor(['delete_customer'], ['reports'])]) {
     const response = await handleCustomerStatusRequest(request({ isDeleted: true }), 'C0001', dependencies({
@@ -45,6 +45,22 @@ test('Soft delete and restore both require the server-derived Customer delete ri
     assert.ok([401, 403].includes(response.status));
   }
   assert.equal(writes, 0);
+
+  for (const role of ['admin', 'superadmin']) {
+    const response = await handleCustomerStatusRequest(request({ isDeleted: false }), 'C0001', dependencies({
+      getActor: async () => ({ ...actor([]), role }),
+      updateCustomerStatus: async () => { writes += 1; return true; },
+    }));
+    assert.equal(response.status, 200);
+  }
+  assert.equal(writes, 2);
+
+  const deniedRestore = await handleCustomerStatusRequest(request({ isDeleted: false }), 'C0001', dependencies({
+    getActor: async () => ({ ...actor([], ['reports']), role: 'admin' }),
+    updateCustomerStatus: async () => { writes += 1; return true; },
+  }));
+  assert.equal(deniedRestore.status, 403);
+  assert.equal(writes, 2);
 });
 
 test('Cross-origin and non-JSON status requests fail before authorization or mutation', async () => {
@@ -158,9 +174,11 @@ test('Database adapter changes only is_deleted and guards the expected prior sta
   assert.deepEqual(state.calls[1].filters, [['custno', 'C0001'], ['is_deleted', true]]);
 });
 
-test('Customer list exposes status actions only when the server loader returns delete_customer', async () => {
+test('Customer list exposes Delete by right and Restore by manager role', async () => {
   const page = await readFile(new URL('../app/erp/modules/customer/page.tsx', import.meta.url), 'utf8');
   assert.match(page, /rights\.includes\('delete_customer'\)/);
+  assert.match(page, /const canRestore = isManager/);
+  assert.match(page, /customer\.status === 'inactive' \? canRestore : canDelete/);
   assert.match(page, /<CustomerStatusAction/);
   assert.match(page, /status === 'inactive'/);
   const action = await readFile(new URL('../app/erp/modules/customer/customer-status-action.tsx', import.meta.url), 'utf8');

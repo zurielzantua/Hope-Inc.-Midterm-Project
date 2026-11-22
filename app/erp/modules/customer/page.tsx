@@ -35,7 +35,10 @@ export default async function CustomerPage({ searchParams }: CustomerPageProps) 
   const rights = result.access.rights ?? [];
   const canAdd = rights.includes('add_customer');
   const canEdit = rights.includes('edit_customer');
-  const canChangeStatus = rights.includes('delete_customer');
+  const canDelete = rights.includes('delete_customer');
+  const canRestore = isManager;
+  const canChangeStatus = result.kind === 'ok' && result.customers.some((customer) =>
+    customer.status === 'inactive' ? canRestore : canDelete);
   const notice = params.notice === 'created' ? 'Customer added.'
     : params.notice === 'updated' ? 'Customer updated.'
     : params.notice === 'deleted' ? 'Customer moved to Inactive.'
@@ -140,7 +143,14 @@ export default async function CustomerPage({ searchParams }: CustomerPageProps) 
                           <td className="px-4 py-3">
                             <div className="flex flex-wrap items-center gap-3">
                               {canEdit && <Link href={`/erp/modules/customer/${encodeURIComponent(customer.customerNo)}/edit`} className="font-semibold text-teal underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal">Edit</Link>}
-                              {canChangeStatus && <CustomerStatusAction customerNo={customer.customerNo} isDeleted={customer.status === 'inactive'} />}
+                              {(customer.status === 'inactive' ? canRestore : canDelete) && (
+                                <CustomerStatusAction
+                                  customerNo={customer.customerNo}
+                                  isDeleted={customer.status === 'inactive'}
+                                  canDelete={canDelete}
+                                  canRestore={canRestore}
+                                />
+                              )}
                             </div>
                           </td>
                         )}
