@@ -74,6 +74,16 @@ export function customerMutationDependencies() {
       if (error) throw error;
       return Boolean(data);
     },
+    async updateCustomerStatus(customerNo: string, isDeleted: boolean) {
+      const { data, error } = await adminClient().from('customer')
+        .update({ is_deleted: isDeleted })
+        .eq('custno', customerNo)
+        .eq('is_deleted', !isDeleted)
+        .select('custno')
+        .maybeSingle();
+      if (error) throw error;
+      return Boolean(data);
+    },
     async getCustomerForEdit(customerNo: string, role: string) {
       const userView = role === 'user';
       const { data, error } = await adminClient().from(userView ? 'customer_active' : 'customer')

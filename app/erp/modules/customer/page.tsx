@@ -3,6 +3,7 @@ import { notFound, redirect } from 'next/navigation';
 import { customerListDependencies } from '@/lib/customer-list-server';
 import { loadCustomerList } from '@/lib/customer-list';
 import { ErpShell } from '../../erp-shell';
+import { CustomerStatusAction } from './customer-status-action';
 
 export const dynamic = 'force-dynamic';
 
@@ -34,7 +35,11 @@ export default async function CustomerPage({ searchParams }: CustomerPageProps) 
   const rights = result.access.rights ?? [];
   const canAdd = rights.includes('add_customer');
   const canEdit = rights.includes('edit_customer');
-  const notice = params.notice === 'created' ? 'Customer added.' : params.notice === 'updated' ? 'Customer updated.' : null;
+  const canChangeStatus = rights.includes('delete_customer');
+  const notice = params.notice === 'created' ? 'Customer added.'
+    : params.notice === 'updated' ? 'Customer updated.'
+    : params.notice === 'deleted' ? 'Customer moved to Inactive.'
+    : params.notice === 'restored' ? 'Customer restored.' : null;
 
   return (
     <ErpShell role={role} modules={modules} currentPath="/erp/modules/customer" moduleLinksUnavailable={result.kind === 'unavailable'}>
@@ -119,7 +124,7 @@ export default async function CustomerPage({ searchParams }: CustomerPageProps) 
                       <th scope="col" className="px-4 py-3">Pay Terms</th>
                       {isManager && <th scope="col" className="px-4 py-3">Status</th>}
                       {isManager && <th scope="col" className="px-4 py-3">Stamp</th>}
-                      {canEdit && <th scope="col" className="px-4 py-3">Actions</th>}
+                      {(canEdit || canChangeStatus) && <th scope="col" className="px-4 py-3">Actions</th>}
                     </tr>
                   </thead>
                   <tbody>
@@ -131,7 +136,14 @@ export default async function CustomerPage({ searchParams }: CustomerPageProps) 
                         <td className="whitespace-nowrap px-4 py-3">{customer.paymentTerms || '—'}</td>
                         {isManager && <td className="whitespace-nowrap px-4 py-3">{customer.status === 'inactive' ? 'Inactive' : 'Active'}</td>}
                         {isManager && <td className="px-4 py-3">{customer.stamp || '—'}</td>}
-                        {canEdit && <td className="px-4 py-3"><Link href={`/erp/modules/customer/${encodeURIComponent(customer.customerNo)}/edit`} className="font-semibold text-teal underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal">Edit</Link></td>}
+                        {(canEdit || canChangeStatus) && (
+                          <td className="px-4 py-3">
+                            <div className="flex flex-wrap items-center gap-3">
+                              {canEdit && <Link href={`/erp/modules/customer/${encodeURIComponent(customer.customerNo)}/edit`} className="font-semibold text-teal underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal">Edit</Link>}
+                              {canChangeStatus && <CustomerStatusAction customerNo={customer.customerNo} isDeleted={customer.status === 'inactive'} />}
+                            </div>
+                          </td>
+                        )}
                       </tr>
                     ))}
                   </tbody>
