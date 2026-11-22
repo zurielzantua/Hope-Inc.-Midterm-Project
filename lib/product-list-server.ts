@@ -1,4 +1,6 @@
 import { loadCurrentErpModules } from '@/lib/auth/erp-modules-server';
+import { normalizeUnitPrice } from '@/lib/price-history';
+import { todayInManila } from '@/lib/price-history-server';
 import { productSearchFilter, type ProductListRow, type ProductListRole, type ProductStatusFilter } from '@/lib/product-list';
 import { createSupabaseAdminClient } from '@/lib/supabase/server';
 import { getSupabaseConfig } from '@/lib/supabase/config';
@@ -16,6 +18,7 @@ function mapProduct(value: unknown, role: ProductListRole): ProductListRow {
     productCode: row.prodcode,
     description: nullableString(row.description),
     unit: nullableString(row.unit),
+    currentPrice: null,
   };
   if (role !== 'user') {
     if (typeof row.is_deleted !== 'boolean') throw new Error('Invalid product record');
@@ -46,7 +49,20 @@ export function productListDependencies() {
       if (search) query = query.or(productSearchFilter(search));
       const { data, error } = await query.order('prodcode', { ascending: true });
       if (error || !Array.isArray(data)) throw error ?? new Error('Invalid product query result');
-      return data.map((row: unknown) => mapProduct(row, role));
+      const products = data.map((row: unknown) => mapProduct(row, role));
+      const asOfDate = todayInManila();
+      const currentPrices = await Promise.all(products.map(async ({ productCode }) => {
+        const { data: value, error: priceError } = await admin.rpc('product_price_as_of', {
+          p_prod_code: productCode,
+          p_as_of: asOfDate,
+        });
+        if (priceError) throw priceError;
+        if (value === null) return null;
+        const price = normalizeUnitPrice(typeof value === 'number' ? String(value) : value);
+        if (!price) throw new Error('Invalid current price result');
+        return price;
+      }));
+      return products.map((product, index) => ({ ...product, currentPrice: currentPrices[index] }));
     },
   };
 }

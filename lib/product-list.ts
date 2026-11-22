@@ -8,6 +8,7 @@ export type ProductListRow = {
   productCode: string;
   description: string | null;
   unit: string | null;
+  currentPrice: string | null;
   status?: 'active' | 'inactive';
   stamp?: string | null;
 };

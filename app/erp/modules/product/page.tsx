@@ -21,6 +21,10 @@ function ErrorPage({ message }: { message: string }) {
   );
 }
 
+function formatPrice(value: string | null) {
+  return value === null ? '—' : new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(Number(value));
+}
+
 export default async function ProductPage({ searchParams }: ProductPageProps) {
   const params = await searchParams;
   const result = await loadProductList({ search: params.q, status: params.status }, productListDependencies());
@@ -107,7 +111,7 @@ export default async function ProductPage({ searchParams }: ProductPageProps) {
                     <th scope="row" className="whitespace-nowrap px-4 py-3 font-semibold">{product.productCode}</th>
                     <td className="px-4 py-3">{product.description || '—'}</td>
                     <td className="whitespace-nowrap px-4 py-3">{product.unit || '—'}</td>
-                    <td className="whitespace-nowrap px-4 py-3">—</td>
+                    <td className="whitespace-nowrap px-4 py-3">{formatPrice(product.currentPrice)}</td>
                     <td className="px-4 py-3"><Link href={`/erp/modules/product/${encodeURIComponent(product.productCode)}/price-history`} className="font-semibold text-teal underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal">Prices</Link></td>
                     {isManager && <td className="whitespace-nowrap px-4 py-3">{product.status === 'inactive' ? 'Inactive' : 'Active'}</td>}
                     {isManager && <td className="px-4 py-3">{product.stamp || '—'}</td>}
