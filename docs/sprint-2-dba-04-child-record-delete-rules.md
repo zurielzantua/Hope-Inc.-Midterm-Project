@@ -95,8 +95,8 @@ path and must not be mislabeled as an active-child conflict. S2-DEV-03 (#154)
 implements the Customer 409 contract. S2-DEV-06 (#144) should use the matching
 Product response. Child-write endpoints can map only SQLSTATE `23514` plus
 `active_parent_required` to the `INACTIVE_PARENT` response above. PostgreSQL
-uses `P0001` when a `RAISE EXCEPTION` omits an explicit SQLSTATE; the existing
-parent trigger does so. This is statically verified, not live tested.
+uses `P0001` when a `RAISE EXCEPTION` omits an explicit SQLSTATE; the local SQL
+regression test verified this trigger error contract.
 
 ## Verification
 
@@ -112,7 +112,20 @@ environment. It waits until the second session is visibly blocked on the
 parent-row lock before allowing the first transaction to finish. Its fixture
 rows remain in the disposable database.
 
-This workspace has no PostgreSQL server responding on `127.0.0.1:5432`, so the
-SQL and two-session tests have not been executed here. The trigger definition,
-lock protocol, and migration transaction behavior were inspected statically;
-hosted behavior is unverified.
+## Runtime results (2026-11-22)
+
+Applied the project migrations in order to a disposable PostgreSQL 17.11
+database and ran both tests successfully:
+
+- `s2_dba_04_child_record_delete_rules.sql` completed with `BEGIN`, `DO`, and
+  `ROLLBACK`, covering child restrictions, allowed soft delete/restore,
+  retained references/audit rows, and expected database error codes/messages.
+- `s2_dba_04_child_parent_concurrency.sh` passed both parent-first and
+  child-first interleavings after observing the competing session blocked on
+  the row lock.
+
+The local cluster used a minimal `auth` compatibility shim needed by the
+project migrations. Tests ran as the local PostgreSQL administrator; they do
+not verify Supabase Auth/JWT behavior, application-role RLS, or the hosted
+Supabase project. The hosted database was not modified. Stronger transaction
+isolation levels remain untested.
