@@ -194,6 +194,13 @@ test('No eligible price remains distinct from a batch RPC failure', async () => 
 
   setupServer({
     rows: { product_active: [{ prodcode: 'P00001', description: 'Widget', unit: 'ea' }] },
+    rpcRows: [{ prodcode: 'P00001', unitprice: null }],
+  });
+  const [nullablePriceProduct] = await productListDependencies().listProducts({ role: 'user', status: 'active', search: '' });
+  assert.equal(nullablePriceProduct.currentPrice, null);
+
+  setupServer({
+    rows: { product_active: [{ prodcode: 'P00001', description: 'Widget', unit: 'ea' }] },
     rpcError: new Error('private RPC detail'),
   });
   await assert.rejects(

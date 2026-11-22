@@ -60,7 +60,7 @@ export function productListDependencies() {
       if (!Array.isArray(priceRows)) throw new Error('Invalid current price query result');
 
       const requestedCodes = new Set(products.map(({ productCode }) => productCode));
-      const currentPrices = new Map<string, string>();
+      const currentPrices = new Map<string, string | null>();
       for (const value of priceRows) {
         if (!value || typeof value !== 'object' || Array.isArray(value)) {
           throw new Error('Invalid current price result');
@@ -68,6 +68,10 @@ export function productListDependencies() {
         const row = value as Record<string, unknown>;
         if (typeof row.prodcode !== 'string' || !requestedCodes.has(row.prodcode) || currentPrices.has(row.prodcode)) {
           throw new Error('Invalid current price result');
+        }
+        if (row.unitprice === null) {
+          currentPrices.set(row.prodcode, null);
+          continue;
         }
         const price = normalizeUnitPrice(typeof row.unitprice === 'number' ? String(row.unitprice) : row.unitprice);
         if (!price) throw new Error('Invalid current price result');
