@@ -119,10 +119,14 @@ This status update records merged implementation separately from hosted acceptan
 
 **Sprint 2 dependency decision:** the merged Sprint 1 auth and permission code remains available for local implementation; available evidence does not establish a new hard coding prerequisite. Hosted email, RLS, and role/right checks remain verification gates. Do not mark them passed from merged PRs or local tests alone. The six S2-TST issues remain exclusively Tester-owned.
 
-### Current execution gates
+### Prior readiness audit (2026-11-21)
 
 At the last verified checkout, the Scrum Master local branch was fast-forwarded to integration commit 4e7c6cdd; the remote scrum-master branch remained at ff72e7f. UI/UX was also fast-forwarded locally; its remote role branch remains behind. No synchronization push was made.
 
-GitHub identity remains inconsistent: gh auth status reports pinggu0x, while the authenticated GitHub API user endpoint returned gabrielzantua. Do not commit or push until the effective Git push identity and permission are confirmed.
+The GitHub identity mismatch noted in this audit was resolved on 2026-11-23. The active GitHub CLI account and API identity now both report `gabrielzantua`, and GitHub CLI HTTPS credentials are configured for Git.
 
-The supervised Codex launch failed before the agent session started: the first attempt produced a shell parse error, and a second supported Orca launch reported that the dangerous approvals/sandbox bypass flag was passed more than once. The failed dispatch was stopped and released. No project files were changed by that worker. Do not alter Orca permission settings or switch to another provider/auth path to evade this launch failure.
+### Current GitHub publication state (2026-11-23)
+
+The non-mutating HTTPS push dry run succeeded against `s2/uix-04`. UIX-04 and UIX-05 issue branches are pushed and verified; no Sprint 2 PR is open yet. Issue owners create their own PRs, a different teammate reviews, and the Scrum Master merges in dependency order. The orchestration `git_push_enabled` gate is enabled by the operator's explicit authorization. Branch synchronization, automated PR creation/merge, and hosted database changes remain separately gated.
+
+The supervised Codex launch failure recorded above is retained as historical evidence. It is not a reason to report a worker as running or to bypass Orca permissions; this update did not retry the launcher.
