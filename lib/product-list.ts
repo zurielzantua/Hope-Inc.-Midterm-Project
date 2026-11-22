@@ -3,7 +3,7 @@ import type { ErpModule } from '@/lib/auth/erp-modules';
 export type ProductListRole = 'user' | 'admin' | 'superadmin';
 export type ProductStatusFilter = 'active' | 'inactive' | 'all';
 export type ProductListFilters = { search: string; status: ProductStatusFilter };
-export type ProductListAccess = { role: string; modules: ErpModule[]; unavailable: boolean };
+export type ProductListAccess = { role: string; modules: ErpModule[]; rights?: string[]; unavailable: boolean };
 export type ProductListRow = {
   productCode: string;
   description: string | null;
@@ -17,7 +17,7 @@ type Dependencies = {
   getAccess: () => Promise<ProductListAccess | null>;
   listProducts: (query: ProductListQuery) => Promise<ProductListRow[]>;
 };
-type Access = { role: ProductListRole; modules: ErpModule[] };
+type Access = { role: ProductListRole; modules: ErpModule[]; rights: string[] };
 export type ProductListResult =
   | { kind: 'ok'; access: Access; filters: ProductListFilters; products: ProductListRow[] }
   | { kind: 'unauthenticated' }
@@ -49,7 +49,7 @@ export async function loadProductList(
   if (!current) return { kind: 'unauthenticated' };
   if (!isProductListRole(current.role)) return { kind: 'forbidden' };
 
-  const access = { role: current.role, modules: current.modules };
+  const access = { role: current.role, modules: current.modules, rights: current.rights ?? [] };
   if (current.unavailable) return { kind: 'unavailable', access };
   if (!current.modules.some((module) => module.code === 'product')) return { kind: 'forbidden' };
 
