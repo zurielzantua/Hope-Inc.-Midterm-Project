@@ -31,6 +31,7 @@ trap cleanup EXIT
 suffix="$(python3 -c 'import secrets; print(secrets.token_hex(2).upper())')"
 customer_no="Q${suffix}"
 product_code="P${suffix}X"
+customer_sale="D04S${suffix}"
 employee_no="$(psql -X -Atqc 'SELECT empno FROM public.employee ORDER BY empno LIMIT 1')"
 if [[ -z "$employee_no" ]]; then
   echo 'No employee fixture is available for the concurrency test.' >&2
@@ -38,8 +39,12 @@ if [[ -z "$employee_no" ]]; then
 fi
 
 psql -X -v ON_ERROR_STOP=1 -q \
-  -v customer_no="$customer_no" -v product_code="$product_code" \
-  -c "INSERT INTO public.customer (custno,custname,address,payterm) VALUES (:'customer_no','DBA04 race customer','Disposable fixture','COD'); INSERT INTO public.product (prodcode,description,unit) VALUES (:'product_code','DBA04 race product','pc');"
+  -v customer_no="$customer_no" -v product_code="$product_code" -f - <<'SQL'
+INSERT INTO public.customer (custno,custname,address,payterm)
+VALUES (:'customer_no','DBA04 race customer','Disposable fixture','COD');
+INSERT INTO public.product (prodcode,description,unit)
+VALUES (:'product_code','DBA04 race product','pc');
+SQL
 
 wait_for_file() {
   local marker="$1"
@@ -68,7 +73,7 @@ cat >"$temporary_dir/customer-parent.sql" <<SQL
 BEGIN;
 UPDATE public.customer SET is_deleted = TRUE WHERE custno = '$customer_no';
 \! touch "\$S2_DBA04_READY_FILE"
-SELECT pg_sleep(8);
+SELECT pg_sleep(15);
 COMMIT;
 SQL
 PGAPPNAME="dba04-customer-parent-${suffix}" psql -X -v ON_ERROR_STOP=1 -q -f "$temporary_dir/customer-parent.sql" \
@@ -81,9 +86,11 @@ if ! wait_for_file "$S2_DBA04_READY_FILE"; then
 fi
 
 PGAPPNAME="dba04-customer-child-${suffix}" psql -X -v ON_ERROR_STOP=1 -q \
-  -v customer_no="$customer_no" -v trans_no="$customer_sale" -v employee_no="$employee_no" \
-  -c "INSERT INTO public.sales (transno,salesdate,custno,empno) VALUES (:'trans_no',CURRENT_DATE,:'customer_no',:'employee_no');" \
-  >"$temporary_dir/customer-child.log" 2>&1 &
+  -v customer_no="$customer_no" -v trans_no="$customer_sale" -v employee_no="$employee_no" -f - \
+  >"$temporary_dir/customer-child.log" 2>&1 <<'SQL' &
+INSERT INTO public.sales (transno,salesdate,custno,empno)
+VALUES (:'trans_no',CURRENT_DATE,:'customer_no',:'employee_no');
+SQL
 customer_child_pid=$!
 if ! wait_for_lock "dba04-customer-child-${suffix}"; then
   echo 'Customer child insert did not wait on the locked parent row.' >&2
@@ -105,15 +112,17 @@ grep -q 'active_parent_required' "$temporary_dir/customer-child.log" || {
 }
 
 # Child-first: the parent update must wait, then see the committed child and reject.
-psql -X -v ON_ERROR_STOP=1 -q -v product_code="$product_code" \
-  -c "INSERT INTO public.pricehist (effdate,prodcode,unitprice) VALUES (DATE '2099-01-01',:'product_code',1.00);"
+psql -X -v ON_ERROR_STOP=1 -q -v product_code="$product_code" -f - <<'SQL'
+INSERT INTO public.pricehist (effdate,prodcode,unitprice)
+VALUES (DATE '2099-01-01',:'product_code',1.00);
+SQL
 export S2_DBA04_READY_FILE="$temporary_dir/product-child-ready"
 cat >"$temporary_dir/product-child.sql" <<SQL
 \set ON_ERROR_STOP on
 BEGIN;
 INSERT INTO public.pricehist (effdate,prodcode,unitprice) VALUES (DATE '2099-01-02','$product_code',2.00);
 \! touch "\$S2_DBA04_READY_FILE"
-SELECT pg_sleep(8);
+SELECT pg_sleep(15);
 COMMIT;
 SQL
 PGAPPNAME="dba04-product-child-${suffix}" psql -X -v ON_ERROR_STOP=1 -q -f "$temporary_dir/product-child.sql" \
@@ -125,9 +134,10 @@ if ! wait_for_file "$S2_DBA04_READY_FILE"; then
   exit 1
 fi
 
-PGAPPNAME="dba04-product-parent-${suffix}" psql -X -v ON_ERROR_STOP=1 -q -v product_code="$product_code" \
-  -c "UPDATE public.product SET is_deleted = TRUE WHERE prodcode = :'product_code';" \
-  >"$temporary_dir/product-parent.log" 2>&1 &
+PGAPPNAME="dba04-product-parent-${suffix}" psql -X -v ON_ERROR_STOP=1 -q -v product_code="$product_code" -f - \
+  >"$temporary_dir/product-parent.log" 2>&1 <<'SQL' &
+UPDATE public.product SET is_deleted = TRUE WHERE prodcode = :'product_code';
+SQL
 product_parent_pid=$!
 if ! wait_for_lock "dba04-product-parent-${suffix}"; then
   echo 'Product soft-delete did not wait on the child transaction lock.' >&2
