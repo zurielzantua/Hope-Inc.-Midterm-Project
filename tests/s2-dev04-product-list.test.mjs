@@ -133,8 +133,8 @@ test('Search targets product code, description, and unit while quoting filter sy
   assert.match(filter, /\\"/);
 });
 
-function setupServer({ rows = {}, error, rpcPrices = {}, rpcError } = {}) {
-  const state = { access: moduleAccess('user'), calls: [], rpcCalls: [], rows, error, rpcPrices, rpcError };
+function setupServer({ rows = {}, error, rpcRows = [], rpcError } = {}) {
+  const state = { access: moduleAccess('user'), calls: [], rpcCalls: [], rows, error, rpcRows, rpcError };
   state.admin = {
     from(table) {
       const call = { table, filters: [] };
@@ -155,7 +155,7 @@ function setupServer({ rows = {}, error, rpcPrices = {}, rpcError } = {}) {
       state.rpcCalls.push({ name, args });
       return state.rpcError
         ? { data: null, error: state.rpcError }
-        : { data: state.rpcPrices[args.p_prod_code] ?? null, error: null };
+        : { data: state.rpcRows, error: null };
     },
   };
   globalThis.__productListServer = state;
@@ -163,22 +163,31 @@ function setupServer({ rows = {}, error, rpcPrices = {}, rpcError } = {}) {
   return state;
 }
 
-test('User data path reads product_active and prices each result as of Manila today', async () => {
+test('User data path batches active product prices as of Manila today', async () => {
   const state = setupServer({
-    rows: { product_active: [{ prodcode: 'P00001', description: 'Widget', unit: 'ea' }] },
-    rpcPrices: { P00001: '12.50' },
+    rows: { product_active: [
+      { prodcode: 'P00001', description: 'Widget', unit: 'ea' },
+      { prodcode: 'P00002', description: 'Gadget', unit: 'pc' },
+    ] },
+    rpcRows: [
+      { prodcode: 'P00002', unitprice: '12.50' },
+      { prodcode: 'P00001', unitprice: 5 },
+    ],
   });
   const result = await productListDependencies().listProducts({ role: 'user', status: 'active', search: '' });
   assert.deepEqual(state.calls[0], {
     table: 'product_active', columns: 'prodcode,description,unit', filters: [], order: ['prodcode', { ascending: true }],
   });
-  assert.deepEqual(result, [{ productCode: 'P00001', description: 'Widget', unit: 'ea', currentPrice: '12.50' }]);
+  assert.deepEqual(result, [
+    { productCode: 'P00001', description: 'Widget', unit: 'ea', currentPrice: '5.00' },
+    { productCode: 'P00002', description: 'Gadget', unit: 'pc', currentPrice: '12.50' },
+  ]);
   assert.deepEqual(state.rpcCalls, [{
-    name: 'product_price_as_of', args: { p_prod_code: 'P00001', p_as_of: '2026-11-22' },
+    name: 'product_prices_as_of', args: { p_prod_codes: ['P00001', 'P00002'], p_as_of: '2026-11-22' },
   }]);
 });
 
-test('No eligible price remains distinct from an RPC failure', async () => {
+test('No eligible price remains distinct from a batch RPC failure', async () => {
   setupServer({ rows: { product_active: [{ prodcode: 'P00001', description: 'Widget', unit: 'ea' }] } });
   const [product] = await productListDependencies().listProducts({ role: 'user', status: 'active', search: '' });
   assert.equal(product.currentPrice, null);
@@ -193,6 +202,27 @@ test('No eligible price remains distinct from an RPC failure', async () => {
   );
   const page = await readFile(new URL('../app/erp/modules/product/page.tsx', import.meta.url), 'utf8');
   assert.match(page, /formatPrice\(product\.currentPrice\)/);
+});
+
+test('Empty product results skip the price RPC and malformed batch rows fail closed', async () => {
+  const empty = setupServer({ rows: { product_active: [] } });
+  assert.deepEqual(await productListDependencies().listProducts({ role: 'user', status: 'active', search: '' }), []);
+  assert.deepEqual(empty.rpcCalls, []);
+
+  for (const rpcRows of [
+    [{ prodcode: 'P00001', unitprice: '12.50' }, { prodcode: 'P00001', unitprice: '13.00' }],
+    [{ prodcode: 'P99999', unitprice: '12.50' }],
+    [{ prodcode: 'P00001', unitprice: '0' }],
+  ]) {
+    setupServer({
+      rows: { product_active: [{ prodcode: 'P00001', description: 'Widget', unit: 'ea' }] },
+      rpcRows,
+    });
+    await assert.rejects(
+      () => productListDependencies().listProducts({ role: 'user', status: 'active', search: '' }),
+      /Invalid current price result/,
+    );
+  }
 });
 
 test('Admin active reads use product_active; inactive and all use the authorized product table', async () => {

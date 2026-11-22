@@ -50,19 +50,34 @@ export function productListDependencies() {
       const { data, error } = await query.order('prodcode', { ascending: true });
       if (error || !Array.isArray(data)) throw error ?? new Error('Invalid product query result');
       const products = data.map((row: unknown) => mapProduct(row, role));
-      const asOfDate = todayInManila();
-      const currentPrices = await Promise.all(products.map(async ({ productCode }) => {
-        const { data: value, error: priceError } = await admin.rpc('product_price_as_of', {
-          p_prod_code: productCode,
-          p_as_of: asOfDate,
-        });
-        if (priceError) throw priceError;
-        if (value === null) return null;
-        const price = normalizeUnitPrice(typeof value === 'number' ? String(value) : value);
+      if (products.length === 0) return products;
+
+      const { data: priceRows, error: priceError } = await admin.rpc('product_prices_as_of', {
+        p_prod_codes: products.map(({ productCode }) => productCode),
+        p_as_of: todayInManila(),
+      });
+      if (priceError) throw priceError;
+      if (!Array.isArray(priceRows)) throw new Error('Invalid current price query result');
+
+      const requestedCodes = new Set(products.map(({ productCode }) => productCode));
+      const currentPrices = new Map<string, string>();
+      for (const value of priceRows) {
+        if (!value || typeof value !== 'object' || Array.isArray(value)) {
+          throw new Error('Invalid current price result');
+        }
+        const row = value as Record<string, unknown>;
+        if (typeof row.prodcode !== 'string' || !requestedCodes.has(row.prodcode) || currentPrices.has(row.prodcode)) {
+          throw new Error('Invalid current price result');
+        }
+        const price = normalizeUnitPrice(typeof row.unitprice === 'number' ? String(row.unitprice) : row.unitprice);
         if (!price) throw new Error('Invalid current price result');
-        return price;
+        currentPrices.set(row.prodcode, price);
+      }
+
+      return products.map((product) => ({
+        ...product,
+        currentPrice: currentPrices.get(product.productCode) ?? null,
       }));
-      return products.map((product, index) => ({ ...product, currentPrice: currentPrices[index] }));
     },
   };
 }
