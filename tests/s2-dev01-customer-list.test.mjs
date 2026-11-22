@@ -218,8 +218,12 @@ test('Customer page is a force-dynamic protected route backed by the same author
   assert.equal(page.props.currentPath, '/erp/modules/customer');
 });
 
-test('the singular Customer API route delegates requests to the shared authorization handler', async () => {
+test('Customer API route delegates list and create requests to their authorization handlers', async () => {
+  const mutationModule = uri(`export const handleCreateCustomerRequest = async () => new Response('created', { status: 201 });`);
+  const mutationServerModule = uri('export const customerMutationDependencies = () => ({});');
   const routeSource = (await readFile(new URL('../app/api/customer/route.ts', import.meta.url), 'utf8'))
+    .replace("from '@/lib/customer-mutations'", `from '${mutationModule}'`)
+    .replace("from '@/lib/customer-mutations-server'", `from '${mutationServerModule}'`)
     .replace("from '@/lib/customer-list'", `from '${listModule}'`)
     .replace("from '@/lib/customer-list-server'", `from '${uri('export const customerListDependencies = () => globalThis.__customerRouteState.deps;')}'`);
   const route = await import(uri(compile(routeSource)));
@@ -230,6 +234,8 @@ test('the singular Customer API route delegates requests to the shared authoriza
     const response = await route.GET(request('/api/customer?role=admin'));
     assert.equal(response.status, 401);
     assert.equal(state.calls.length, 0);
+    const created = await route.POST(request('/api/customer', { customerNo: 'C0091' }));
+    assert.equal(created.status, 201);
   } finally {
     delete globalThis.__customerRouteState;
   }
