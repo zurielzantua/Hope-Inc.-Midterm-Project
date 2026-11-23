@@ -56,6 +56,16 @@ export function productMutationDependencies() {
       if (error) throw error;
       return Boolean(data);
     },
+    async updateProductStatus(productCode: string, isDeleted: boolean) {
+      const { data, error } = await adminClient().from('product')
+        .update({ is_deleted: isDeleted })
+        .eq('prodcode', productCode)
+        .eq('is_deleted', !isDeleted)
+        .select('prodcode')
+        .maybeSingle();
+      if (error) throw error;
+      return Boolean(data);
+    },
     async getProductForEdit(productCode: string, role: string) {
       const userView = role === 'user';
       const { data, error } = await adminClient().from(userView ? 'product_active' : 'product')

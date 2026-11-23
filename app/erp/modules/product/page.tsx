@@ -3,6 +3,7 @@ import { notFound, redirect } from 'next/navigation';
 import { loadProductList } from '@/lib/product-list';
 import { productListDependencies } from '@/lib/product-list-server';
 import { ErpShell } from '../../erp-shell';
+import { ProductStatusAction } from './product-status-action';
 
 export const dynamic = 'force-dynamic';
 
@@ -31,9 +32,14 @@ export default async function ProductPage({ searchParams }: ProductPageProps) {
   const isManager = role === 'admin' || role === 'superadmin';
   const canAdd = rights.includes('add_product');
   const canEdit = rights.includes('edit_product');
+  const canDelete = rights.includes('delete_product');
+  const canRestore = isManager;
+  const canChangeStatus = result.kind === 'ok' && result.products.some((product) =>
+    product.status === 'inactive' ? canRestore : canDelete);
   const search = result.kind === 'ok' ? result.filters.search : typeof params.q === 'string' ? params.q : '';
   const status = result.kind === 'ok' ? result.filters.status : typeof params.status === 'string' && ['active', 'inactive', 'all'].includes(params.status) ? params.status : 'all';
-  const notice = params.notice === 'created' ? 'Product added.' : params.notice === 'updated' ? 'Product updated.' : null;
+  const notice = params.notice === 'created' ? 'Product added.' : params.notice === 'updated' ? 'Product updated.'
+    : params.notice === 'deleted' ? 'Product moved to Inactive.' : params.notice === 'restored' ? 'Product restored.' : null;
 
   return (
     <ErpShell role={role} modules={modules} currentPath="/erp/modules/product" moduleLinksUnavailable={result.kind === 'unavailable'}>
@@ -91,7 +97,7 @@ export default async function ProductPage({ searchParams }: ProductPageProps) {
                   <th scope="col" className="px-4 py-3">Current price</th>
                   {isManager && <th scope="col" className="px-4 py-3">Status</th>}
                   {isManager && <th scope="col" className="px-4 py-3">Stamp</th>}
-                  {canEdit && <th scope="col" className="px-4 py-3">Actions</th>}
+                  {(canEdit || canChangeStatus) && <th scope="col" className="px-4 py-3">Actions</th>}
                 </tr>
               </thead>
               <tbody>
@@ -103,7 +109,17 @@ export default async function ProductPage({ searchParams }: ProductPageProps) {
                     <td className="whitespace-nowrap px-4 py-3">—</td>
                     {isManager && <td className="whitespace-nowrap px-4 py-3">{product.status === 'inactive' ? 'Inactive' : 'Active'}</td>}
                     {isManager && <td className="px-4 py-3">{product.stamp || '—'}</td>}
-                    {canEdit && <td className="px-4 py-3"><Link href={`/erp/modules/product/${encodeURIComponent(product.productCode)}/edit`} className="font-semibold text-teal underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal">Edit</Link></td>}
+                    {(canEdit || canChangeStatus) && <td className="px-4 py-3"><div className="flex flex-wrap items-center gap-3">
+                      {canEdit && <Link href={`/erp/modules/product/${encodeURIComponent(product.productCode)}/edit`} className="font-semibold text-teal underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal">Edit</Link>}
+                      {(product.status === 'inactive' ? canRestore : canDelete) && (
+                        <ProductStatusAction
+                          productCode={product.productCode}
+                          isDeleted={product.status === 'inactive'}
+                          canDelete={canDelete}
+                          canRestore={canRestore}
+                        />
+                      )}
+                    </div></td>}
                   </tr>
                 ))}
               </tbody>
