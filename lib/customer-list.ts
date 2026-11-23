@@ -6,6 +6,7 @@ export type CustomerListFilters = { search: string; status: CustomerStatusFilter
 export type CustomerListAccess = {
   role: string;
   modules: ErpModule[];
+  rights?: string[];
   unavailable: boolean;
 };
 export type CustomerListRow = {
@@ -22,7 +23,7 @@ type Dependencies = {
   getAccess: () => Promise<CustomerListAccess | null>;
   listCustomers: (query: CustomerListQuery) => Promise<CustomerListRow[]>;
 };
-type Access = { role: CustomerListRole; modules: ErpModule[] };
+type Access = { role: CustomerListRole; modules: ErpModule[]; rights: string[] };
 export type CustomerListResult =
   | { kind: 'ok'; access: Access; filters: CustomerListFilters; customers: CustomerListRow[] }
   | { kind: 'unauthenticated' }
@@ -47,7 +48,7 @@ export function customerSearchFilter(search: string) {
 }
 
 function accessFor(role: CustomerListRole, modules: ErpModule[]): Access {
-  return { role, modules };
+  return { role, modules, rights: [] };
 }
 
 export async function loadCustomerList(
@@ -60,7 +61,7 @@ export async function loadCustomerList(
   if (!current) return { kind: 'unauthenticated' };
   if (!isCustomerListRole(current.role)) return { kind: 'forbidden' };
 
-  const access = accessFor(current.role, current.modules);
+  const access = { ...accessFor(current.role, current.modules), rights: current.rights ?? [] };
   if (current.unavailable) return { kind: 'unavailable', access };
   if (!current.modules.some((module) => module.code === 'customer')) return { kind: 'forbidden' };
 

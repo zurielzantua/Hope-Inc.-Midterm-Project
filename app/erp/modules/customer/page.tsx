@@ -31,6 +31,10 @@ export default async function CustomerPage({ searchParams }: CustomerPageProps) 
 
   const { role, modules } = result.access;
   const isManager = role === 'admin' || role === 'superadmin';
+  const rights = result.access.rights ?? [];
+  const canAdd = rights.includes('add_customer');
+  const canEdit = rights.includes('edit_customer');
+  const notice = params.notice === 'created' ? 'Customer added.' : params.notice === 'updated' ? 'Customer updated.' : null;
 
   return (
     <ErpShell role={role} modules={modules} currentPath="/erp/modules/customer" moduleLinksUnavailable={result.kind === 'unavailable'}>
@@ -42,7 +46,12 @@ export default async function CustomerPage({ searchParams }: CustomerPageProps) 
       <section className="rounded-md border border-line bg-surface p-5 shadow-soft sm:p-7">
         <p className="text-xs font-semibold uppercase tracking-wide text-teal">Customer module</p>
         <h1 className="mt-1 font-display text-2xl font-bold text-navy sm:text-3xl">Customer Management</h1>
-        <p className="mt-2 text-sm text-muted">Search by customer number, name, address, or payment terms.</p>
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <p className="mt-2 text-sm text-muted">Search by customer number, name, address, or payment terms.</p>
+          {canAdd && <Link href="/erp/modules/customer/new" className="button-primary">Add Customer</Link>}
+        </div>
+
+        {notice && <p role="status" className="mt-4 rounded-md border border-teal/30 bg-teal/10 px-4 py-3 text-sm text-ink">{notice}</p>}
 
         {result.kind === 'unavailable' ? (
           <p role="alert" className="mt-5 rounded-md border border-error/30 bg-error/10 px-4 py-3 text-sm text-ink">
@@ -110,6 +119,7 @@ export default async function CustomerPage({ searchParams }: CustomerPageProps) 
                       <th scope="col" className="px-4 py-3">Pay Terms</th>
                       {isManager && <th scope="col" className="px-4 py-3">Status</th>}
                       {isManager && <th scope="col" className="px-4 py-3">Stamp</th>}
+                      {canEdit && <th scope="col" className="px-4 py-3">Actions</th>}
                     </tr>
                   </thead>
                   <tbody>
@@ -121,6 +131,7 @@ export default async function CustomerPage({ searchParams }: CustomerPageProps) 
                         <td className="whitespace-nowrap px-4 py-3">{customer.paymentTerms || '—'}</td>
                         {isManager && <td className="whitespace-nowrap px-4 py-3">{customer.status === 'inactive' ? 'Inactive' : 'Active'}</td>}
                         {isManager && <td className="px-4 py-3">{customer.stamp || '—'}</td>}
+                        {canEdit && <td className="px-4 py-3"><Link href={`/erp/modules/customer/${encodeURIComponent(customer.customerNo)}/edit`} className="font-semibold text-teal underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal">Edit</Link></td>}
                       </tr>
                     ))}
                   </tbody>
