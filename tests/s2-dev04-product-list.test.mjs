@@ -28,8 +28,8 @@ after(() => {
   else process.env.SUPABASE_SECRET_KEY = originalSecret;
 });
 
-const moduleAccess = (role = 'user', modules = ['product'], unavailable = false) => ({
-  role, modules: modules.map((code) => ({ code })), unavailable,
+const moduleAccess = (role = 'user', modules = ['product'], unavailable = false, rights = []) => ({
+  role, modules: modules.map((code) => ({ code })), rights, unavailable,
 });
 
 function listDeps(access, products = []) {
@@ -51,6 +51,13 @@ test('User is restricted to active product results and module access is server-d
   assert.equal(result.kind, 'ok');
   assert.deepEqual(result.filters, { search: 'widget', status: 'active' });
   assert.deepEqual(deps.calls, [{ role: 'user', search: 'widget', status: 'active' }]);
+});
+
+test('Product action rights from the verified server access are carried to the page', async () => {
+  const rights = ['view_product', 'add_product'];
+  const result = await loadProductList({}, listDeps(moduleAccess('user', ['product'], false, rights)));
+  assert.equal(result.kind, 'ok');
+  assert.deepEqual(result.access.rights, rights);
 });
 
 test('Admins and Superadmins receive their selected Active, Inactive, or All filter', async () => {
@@ -203,4 +210,8 @@ test('Data access errors fail closed and the Product page performs the same serv
   assert.match(page, /result\.kind === 'forbidden'.*notFound\(\)/s);
   assert.match(page, /isManager && <th scope="col" className="px-4 py-3">Status/);
   assert.match(page, /isManager && <th scope="col" className="px-4 py-3">Stamp/);
+  assert.match(page, /rights\.includes\('add_product'\)/);
+  assert.match(page, /rights\.includes\('edit_product'\)/);
+  assert.match(page, /product\/new/);
+  assert.match(page, /\/edit/);
 });

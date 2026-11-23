@@ -27,10 +27,13 @@ export default async function ProductPage({ searchParams }: ProductPageProps) {
   if (result.kind === 'forbidden') notFound();
   if (!('access' in result) || !result.access) return <ErrorPage message="Your Product access could not be verified. Refresh or sign in again." />;
 
-  const { role, modules } = result.access;
+  const { role, modules, rights } = result.access;
   const isManager = role === 'admin' || role === 'superadmin';
+  const canAdd = rights.includes('add_product');
+  const canEdit = rights.includes('edit_product');
   const search = result.kind === 'ok' ? result.filters.search : typeof params.q === 'string' ? params.q : '';
   const status = result.kind === 'ok' ? result.filters.status : typeof params.status === 'string' && ['active', 'inactive', 'all'].includes(params.status) ? params.status : 'all';
+  const notice = params.notice === 'created' ? 'Product added.' : params.notice === 'updated' ? 'Product updated.' : null;
 
   return (
     <ErpShell role={role} modules={modules} currentPath="/erp/modules/product" moduleLinksUnavailable={result.kind === 'unavailable'}>
@@ -42,7 +45,12 @@ export default async function ProductPage({ searchParams }: ProductPageProps) {
       <section className="rounded-md border border-line bg-surface p-5 shadow-soft sm:p-7">
         <p className="text-xs font-semibold uppercase tracking-wide text-teal">Product module</p>
         <h1 className="mt-1 font-display text-2xl font-bold text-navy sm:text-3xl">Product Management</h1>
-        <p className="mt-2 text-sm text-muted">Search by product code, description, or unit.</p>
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <p className="mt-2 text-sm text-muted">Search by product code, description, or unit.</p>
+          {canAdd && <Link href="/erp/modules/product/new" className="button-primary">Add Product</Link>}
+        </div>
+
+        {notice && <p role="status" className="mt-4 rounded-md border border-teal/30 bg-teal/10 px-4 py-3 text-sm text-ink">{notice}</p>}
 
         <form action="/erp/modules/product" method="get" className="mt-5 grid gap-3 rounded-md border border-line bg-cloud p-4 md:grid-cols-[minmax(0,1fr)_auto_auto] md:items-end">
           <div>
@@ -83,6 +91,7 @@ export default async function ProductPage({ searchParams }: ProductPageProps) {
                   <th scope="col" className="px-4 py-3">Current price</th>
                   {isManager && <th scope="col" className="px-4 py-3">Status</th>}
                   {isManager && <th scope="col" className="px-4 py-3">Stamp</th>}
+                  {canEdit && <th scope="col" className="px-4 py-3">Actions</th>}
                 </tr>
               </thead>
               <tbody>
@@ -94,6 +103,7 @@ export default async function ProductPage({ searchParams }: ProductPageProps) {
                     <td className="whitespace-nowrap px-4 py-3">—</td>
                     {isManager && <td className="whitespace-nowrap px-4 py-3">{product.status === 'inactive' ? 'Inactive' : 'Active'}</td>}
                     {isManager && <td className="px-4 py-3">{product.stamp || '—'}</td>}
+                    {canEdit && <td className="px-4 py-3"><Link href={`/erp/modules/product/${encodeURIComponent(product.productCode)}/edit`} className="font-semibold text-teal underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal">Edit</Link></td>}
                   </tr>
                 ))}
               </tbody>
