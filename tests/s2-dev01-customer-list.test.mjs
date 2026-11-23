@@ -203,6 +203,7 @@ test('Customer page is a force-dynamic protected route backed by the same author
     .replace("from 'next/navigation'", `from '${uri("export const redirect = (path) => { throw new Error('redirect:' + path); }; export const notFound = () => { throw new Error('not-found'); };")}'`)
     .replace("from '@/lib/customer-list-server'", `from '${uri('export const customerListDependencies = () => ({});')}'`)
     .replace("from '@/lib/customer-list'", `from '${uri('export const loadCustomerList = async () => globalThis.__customerPageResult;')}'`)
+    .replace("from './customer-status-action'", `from '${uri('export const CustomerStatusAction = () => null;')}'`)
     .replace("from '../../erp-shell'", `from '${uri('export const ErpShell = () => null;')}'`);
   const jsxRuntime = uri('export const jsx = (type, props) => ({ type, props }); export const jsxs = jsx; export const Fragment = Symbol.for("react.fragment");');
   const pageModule = await import(uri(compile(pageSource, true).replace('from "react/jsx-runtime"', `from '${jsxRuntime}'`)));

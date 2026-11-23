@@ -10,6 +10,7 @@ type Dependencies = {
   getActor: () => Promise<CustomerMutationActor | null>;
   createCustomer: (input: CustomerInput) => Promise<void>;
   updateCustomer: (customerNo: string, input: CustomerEditInput, role: string) => Promise<boolean>;
+  updateCustomerStatus: (customerNo: string, isDeleted: boolean) => Promise<boolean>;
 };
 
 const PAYMENT_TERMS = new Set(['COD', '30D', '45D']);
@@ -51,7 +52,12 @@ function duplicateCustomer(error: unknown) {
   return isRecord(error) && error.code === '23505';
 }
 
-async function authorizedActor(request: Request, requiredRight: 'add_customer' | 'edit_customer', deps: Dependencies) {
+function blockedByActiveChildren(error: unknown) {
+  return isRecord(error) && error.code === 'P0001' && typeof error.message === 'string' &&
+    /^Cannot delete customer row: \d+ active related record\(s\) still exist\.$/.test(error.message);
+}
+
+async function authorizedActor(request: Request, requiredRight: 'add_customer' | 'edit_customer' | 'delete_customer' | null, deps: Dependencies) {
   if (!checkRequestOrigin(request, deps.appOrigin).ok || !isJsonRequest(request)) {
     return { response: json(403, { error: 'Request not allowed.' }) };
   }
@@ -60,7 +66,8 @@ async function authorizedActor(request: Request, requiredRight: 'add_customer' |
   catch { return { response: json(503, { error: 'Customer Management is temporarily unavailable.' }) }; }
   if (!actor) return { response: json(401, { error: 'Sign in to continue.' }) };
   if (!['user', 'admin', 'superadmin'].includes(actor.role) ||
-      !actor.modules.some(({ code }) => code === 'customer') || !actor.rights.includes(requiredRight)) {
+      !actor.modules.some(({ code }) => code === 'customer') ||
+      (requiredRight !== null && !actor.rights.includes(requiredRight))) {
     return { response: json(403, { error: 'You do not have permission to perform this Customer action.' }) };
   }
   return { actor };
@@ -100,5 +107,38 @@ export async function handleUpdateCustomerRequest(request: Request, customerNo: 
   } catch (error) {
     if (duplicateCustomer(error)) return json(409, { error: 'The customer update conflicts with an existing record.' });
     return json(503, { error: 'Customer could not be saved. Try again or contact an administrator.' });
+  }
+}
+
+export async function handleCustomerStatusRequest(request: Request, customerNo: string, deps: Dependencies) {
+  // The Student Guide's 36-right catalog has Delete but no separate Restore right.
+  const access = await authorizedActor(request, null, deps);
+  if ('response' in access) return access.response;
+  const normalizedNo = typeof customerNo === 'string' ? customerNo.trim().toUpperCase() : '';
+  if (!CUSTOMER_NO.test(normalizedNo)) return json(404, { error: 'Customer not found.' });
+  const body = await readBody(request);
+  if (!isRecord(body) || Object.keys(body).length !== 1 || typeof body.isDeleted !== 'boolean') {
+    return json(400, { error: 'Choose a valid Customer status action.' });
+  }
+  if (body.isDeleted && !access.actor.rights.includes('delete_customer')) {
+    return json(403, { error: 'You do not have permission to perform this Customer action.' });
+  }
+  if (!body.isDeleted && access.actor.role === 'user') {
+    return json(403, { error: 'Only Admins and Superadmins can restore customers.' });
+  }
+
+  try {
+    if (!await deps.updateCustomerStatus(normalizedNo, body.isDeleted)) {
+      return json(404, { error: 'Customer not found or its status has changed. Refresh the list.' });
+    }
+    return json(200, { saved: true });
+  } catch (error) {
+    if (blockedByActiveChildren(error)) {
+      return json(409, {
+        code: 'ACTIVE_DEPENDENTS',
+        message: 'This customer has active related records and cannot be deactivated.',
+      });
+    }
+    return json(503, { error: 'Customer status could not be changed. Try again or contact an administrator.' });
   }
 }
