@@ -95,6 +95,7 @@ export default async function ProductPage({ searchParams }: ProductPageProps) {
                   <th scope="col" className="px-4 py-3">Description</th>
                   <th scope="col" className="px-4 py-3">Unit</th>
                   <th scope="col" className="px-4 py-3">Current price</th>
+                  <th scope="col" className="px-4 py-3">Price History</th>
                   {isManager && <th scope="col" className="px-4 py-3">Status</th>}
                   {isManager && <th scope="col" className="px-4 py-3">Stamp</th>}
                   {(canEdit || canChangeStatus) && <th scope="col" className="px-4 py-3">Actions</th>}
@@ -107,6 +108,7 @@ export default async function ProductPage({ searchParams }: ProductPageProps) {
                     <td className="px-4 py-3">{product.description || '—'}</td>
                     <td className="whitespace-nowrap px-4 py-3">{product.unit || '—'}</td>
                     <td className="whitespace-nowrap px-4 py-3">—</td>
+                    <td className="px-4 py-3"><Link href={`/erp/modules/product/${encodeURIComponent(product.productCode)}/price-history`} className="font-semibold text-teal underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal">Prices</Link></td>
                     {isManager && <td className="whitespace-nowrap px-4 py-3">{product.status === 'inactive' ? 'Inactive' : 'Active'}</td>}
                     {isManager && <td className="px-4 py-3">{product.stamp || '—'}</td>}
                     {(canEdit || canChangeStatus) && <td className="px-4 py-3"><div className="flex flex-wrap items-center gap-3">
