@@ -10,14 +10,21 @@ const compile = (source) => ts.transpileModule(source, {
 const listSource = await readFile(new URL('../lib/product-list.ts', import.meta.url), 'utf8');
 const listModule = uri(compile(listSource));
 const { loadProductList, handleProductListRequest, productSearchFilter } = await import(listModule);
+const originModule = uri(compile(await readFile(new URL('../lib/auth/request-origin.ts', import.meta.url), 'utf8')));
+const priceSource = (await readFile(new URL('../lib/price-history.ts', import.meta.url), 'utf8'))
+  .replace("from '@/lib/auth/request-origin'", `from '${originModule}'`);
+const priceModule = uri(compile(priceSource));
 const serverMock = uri(`export const loadCurrentErpModules = async () => globalThis.__productListServer.access;`);
 const adminMock = uri(`export const createSupabaseAdminClient = (...args) => {
   globalThis.__productListServer.adminArgs = args;
   return globalThis.__productListServer.admin;
 };`);
 const configMock = uri(`export const getSupabaseConfig = () => ({ url: 'https://hope.example.test', key: 'publishable-test-key' });`);
+const priceDateMock = uri("export const todayInManila = () => '2026-11-22';");
 const serverSource = (await readFile(new URL('../lib/product-list-server.ts', import.meta.url), 'utf8'))
   .replace("from '@/lib/auth/erp-modules-server'", `from '${serverMock}'`)
+  .replace("from '@/lib/price-history'", `from '${priceModule}'`)
+  .replace("from '@/lib/price-history-server'", `from '${priceDateMock}'`)
   .replace("from '@/lib/product-list'", `from '${listModule}'`)
   .replace("from '@/lib/supabase/server'", `from '${adminMock}'`)
   .replace("from '@/lib/supabase/config'", `from '${configMock}'`);
@@ -126,8 +133,8 @@ test('Search targets product code, description, and unit while quoting filter sy
   assert.match(filter, /\\"/);
 });
 
-function setupServer({ rows = {}, error } = {}) {
-  const state = { access: moduleAccess('user'), calls: [], rows, error };
+function setupServer({ rows = {}, error, rpcRows = [], rpcError } = {}) {
+  const state = { access: moduleAccess('user'), calls: [], rpcCalls: [], rows, error, rpcRows, rpcError };
   state.admin = {
     from(table) {
       const call = { table, filters: [] };
@@ -144,19 +151,85 @@ function setupServer({ rows = {}, error } = {}) {
       };
       return query;
     },
+    async rpc(name, args) {
+      state.rpcCalls.push({ name, args });
+      return state.rpcError
+        ? { data: null, error: state.rpcError }
+        : { data: state.rpcRows, error: null };
+    },
   };
   globalThis.__productListServer = state;
   process.env.SUPABASE_SECRET_KEY = 'test-only-secret';
   return state;
 }
 
-test('User data path reads product_active without returning Status or Stamp', async () => {
-  const state = setupServer({ rows: { product_active: [{ prodcode: 'P00001', description: 'Widget', unit: 'ea' }] } });
+test('User data path batches active product prices as of Manila today', async () => {
+  const state = setupServer({
+    rows: { product_active: [
+      { prodcode: 'P00001', description: 'Widget', unit: 'ea' },
+      { prodcode: 'P00002', description: 'Gadget', unit: 'pc' },
+    ] },
+    rpcRows: [
+      { prodcode: 'P00002', unitprice: '12.50' },
+      { prodcode: 'P00001', unitprice: 5 },
+    ],
+  });
   const result = await productListDependencies().listProducts({ role: 'user', status: 'active', search: '' });
   assert.deepEqual(state.calls[0], {
     table: 'product_active', columns: 'prodcode,description,unit', filters: [], order: ['prodcode', { ascending: true }],
   });
-  assert.deepEqual(result, [{ productCode: 'P00001', description: 'Widget', unit: 'ea' }]);
+  assert.deepEqual(result, [
+    { productCode: 'P00001', description: 'Widget', unit: 'ea', currentPrice: '5.00' },
+    { productCode: 'P00002', description: 'Gadget', unit: 'pc', currentPrice: '12.50' },
+  ]);
+  assert.deepEqual(state.rpcCalls, [{
+    name: 'product_prices_as_of', args: { p_prod_codes: ['P00001', 'P00002'], p_as_of: '2026-11-22' },
+  }]);
+});
+
+test('No eligible price remains distinct from a batch RPC failure', async () => {
+  setupServer({ rows: { product_active: [{ prodcode: 'P00001', description: 'Widget', unit: 'ea' }] } });
+  const [product] = await productListDependencies().listProducts({ role: 'user', status: 'active', search: '' });
+  assert.equal(product.currentPrice, null);
+
+  setupServer({
+    rows: { product_active: [{ prodcode: 'P00001', description: 'Widget', unit: 'ea' }] },
+    rpcRows: [{ prodcode: 'P00001', unitprice: null }],
+  });
+  const [nullablePriceProduct] = await productListDependencies().listProducts({ role: 'user', status: 'active', search: '' });
+  assert.equal(nullablePriceProduct.currentPrice, null);
+
+  setupServer({
+    rows: { product_active: [{ prodcode: 'P00001', description: 'Widget', unit: 'ea' }] },
+    rpcError: new Error('private RPC detail'),
+  });
+  await assert.rejects(
+    () => productListDependencies().listProducts({ role: 'user', status: 'active', search: '' }),
+    (error) => error.message === 'private RPC detail',
+  );
+  const page = await readFile(new URL('../app/erp/modules/product/page.tsx', import.meta.url), 'utf8');
+  assert.match(page, /formatPrice\(product\.currentPrice\)/);
+});
+
+test('Empty product results skip the price RPC and malformed batch rows fail closed', async () => {
+  const empty = setupServer({ rows: { product_active: [] } });
+  assert.deepEqual(await productListDependencies().listProducts({ role: 'user', status: 'active', search: '' }), []);
+  assert.deepEqual(empty.rpcCalls, []);
+
+  for (const rpcRows of [
+    [{ prodcode: 'P00001', unitprice: '12.50' }, { prodcode: 'P00001', unitprice: '13.00' }],
+    [{ prodcode: 'P99999', unitprice: '12.50' }],
+    [{ prodcode: 'P00001', unitprice: '0' }],
+  ]) {
+    setupServer({
+      rows: { product_active: [{ prodcode: 'P00001', description: 'Widget', unit: 'ea' }] },
+      rpcRows,
+    });
+    await assert.rejects(
+      () => productListDependencies().listProducts({ role: 'user', status: 'active', search: '' }),
+      /Invalid current price result/,
+    );
+  }
 });
 
 test('Admin active reads use product_active; inactive and all use the authorized product table', async () => {
