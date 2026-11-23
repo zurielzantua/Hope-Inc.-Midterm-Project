@@ -76,12 +76,24 @@ non-deleted profile and permissions, and can read non-deleted catalogues only
 when its account is approved and non-blocked. Pending, blocked, and deleted
 accounts cannot read protected records. Active-row views use
 `security_invoker = true`, so their source-table RLS policies are enforced.
+
 There are no client write policies for account or permission data; provisioning,
 approval, role changes, and permission grants/revocations must use a trusted
 server-side operation. The default role lookup is executable only by
 `service_role`.
 Soft deletion is performed by setting `is_deleted = true`; restoration clears
 that flag on the existing record.
+
+## Sprint 2 Customer and Product lists
+
+Use `customer_active` and `product_active` for active-only lists. These existing
+views filter soft-deleted rows and run with the caller's privileges, so the
+base-table RLS policies still apply. The DBA-01 partial indexes support active
+list ordering by customer name and product description; primary-key indexes
+already cover customer and product identifiers. Keep inactive-row access on a
+server-side path that first authorizes the administrator, and tune
+substring-search indexes after the actual query operators are measured in
+DBA-06.
 
 ## First-password and password-reset RLS behavior
 
