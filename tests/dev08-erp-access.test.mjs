@@ -79,9 +79,9 @@ function setupModuleClient({ permissions, rights, modules, errorTable } = {}) {
         { auth_user_id: '11111111-1111-4111-8111-111111111111', right_id: 3, is_deleted: false },
       ],
       right_catalog: rights ?? [
-        { right_id: 1, module_id: 10, is_deleted: false },
-        { right_id: 2, module_id: 11, is_deleted: false },
-        { right_id: 3, module_id: 12, is_deleted: false },
+        { right_id: 1, module_id: 10, right_code: 'view_customer', is_deleted: false },
+        { right_id: 2, module_id: 11, right_code: 'view_reports', is_deleted: false },
+        { right_id: 3, module_id: 12, right_code: 'view_unlisted', is_deleted: false },
       ],
       module: modules ?? [
         { module_id: 10, module_code: 'customer', is_deleted: false },
@@ -121,6 +121,7 @@ test('module assignments are read for the verified user and mapped through activ
   const state = setupModuleClient();
   const result = await loadCurrentErpModules();
   assert.deepEqual(result.modules.map(({ code }) => code), ['customer', 'reports']);
+  assert.deepEqual(result.rights, ['view_customer', 'view_reports']);
   assert.equal(result.unavailable, false);
   assert.equal(state.authorizeCalls, 1);
   assert.deepEqual(state.adminArgs, ['https://hope.example.test', 'test-only-secret', 'publishable-test-key']);
@@ -134,8 +135,10 @@ test('module assignments are read for the verified user and mapped through activ
 test('module assignments are reread so Rights Management changes take effect on the next request', async () => {
   const state = setupModuleClient();
   assert.deepEqual((await loadCurrentErpModules()).modules.map(({ code }) => code), ['customer', 'reports']);
+  assert.deepEqual((await loadCurrentErpModules()).rights, ['view_customer', 'view_reports']);
   state.rows.user_permission = [{ auth_user_id: state.user.id, right_id: 1, is_deleted: false }];
   assert.deepEqual((await loadCurrentErpModules()).modules.map(({ code }) => code), ['customer']);
+  assert.deepEqual((await loadCurrentErpModules()).rights, ['view_customer']);
 });
 
 test('permission query failures return no module access and mark navigation unavailable', async () => {
