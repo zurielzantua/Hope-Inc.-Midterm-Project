@@ -5,7 +5,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "check:db": "node scripts/check-supabase.mjs"
+    "check:db": "node scripts/check-supabase.mjs",
+    "test:smoke": "node --test tests/s1-tst-05-smoke.test.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.7",
